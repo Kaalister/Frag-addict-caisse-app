@@ -27,6 +27,11 @@ class MainActivity : FlutterActivity() {
                         call.argument("content"),
                         result
                     )
+                    "savePdf" -> savePdf(
+                        call.argument("name"),
+                        call.argument("bytes"),
+                        result
+                    )
                     else -> result.notImplemented()
                 }
             }
@@ -87,6 +92,63 @@ class MainActivity : FlutterActivity() {
             ?.takeIf { it.isNotEmpty() }
             ?: "frags-addicts-export.json"
         return if (baseName.endsWith(".json", ignoreCase = true)) baseName else "$baseName.json"
+    }
+
+    private fun savePdf(name: String?, bytes: ByteArray?, result: MethodChannel.Result) {
+        val pdfBytes = bytes
+        if (pdfBytes == null || pdfBytes.isEmpty()) {
+            result.error("empty_export", "Le contenu du PDF est vide.", null)
+            return
+        }
+
+        val fileName = safePdfFileName(name)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                if (uri == null) {
+                    result.error("export_failed", "Impossible de créer le PDF dans Downloads.", null)
+                    return
+                }
+
+                try {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(pdfBytes)
+                    } ?: throw IllegalStateException("Flux d'écriture indisponible")
+
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    contentResolver.update(uri, values, null, null)
+                    result.success(mapOf("name" to fileName, "uri" to uri.toString()))
+                } catch (error: Exception) {
+                    contentResolver.delete(uri, null, null)
+                    result.error("export_failed", "Impossible d'écrire le PDF dans Downloads.", error.message)
+                }
+            } else {
+                val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!downloads.exists()) downloads.mkdirs()
+                val file = File(downloads, fileName)
+                file.writeBytes(pdfBytes)
+                result.success(mapOf("name" to fileName, "path" to file.absolutePath))
+            }
+        } catch (error: Exception) {
+            result.error("export_failed", "Impossible d'enregistrer le PDF dans Downloads.", error.message)
+        }
+    }
+
+    private fun safePdfFileName(name: String?): String {
+        val baseName = name
+            ?.trim()
+            ?.replace(Regex("[^A-Za-z0-9._-]+"), "-")
+            ?.trim('-', '.', '_')
+            ?.takeIf { it.isNotEmpty() }
+            ?: "joueurs_airsoft.pdf"
+        return if (baseName.endsWith(".pdf", ignoreCase = true)) baseName else "$baseName.pdf"
     }
 
     private fun openJsonBackupPicker(result: MethodChannel.Result) {

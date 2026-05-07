@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
@@ -9,6 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqflite_ffi;
 
@@ -3227,7 +3230,16 @@ class PlayersPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        const SectionTitle('Historique par joueur'),
+        SectionTitle(
+          'Historique par joueur',
+          trailing: entries.isEmpty
+              ? null
+              : FilledButton.tonalIcon(
+                  onPressed: () => exportPlayersPdf(context, controller),
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('PDF'),
+                ),
+        ),
         if (entries.isEmpty)
           const TacticalCard(
               child: Center(
@@ -5258,6 +5270,403 @@ List<String> changeBreakdown(double change) {
     }
   }
   return chips;
+}
+
+class PlayerPdfRow {
+  const PlayerPdfRow({
+    required this.playerName,
+    required this.playerType,
+    required this.saleCount,
+    required this.items,
+    required this.cashTotal,
+    required this.paypalTotal,
+    required this.sumupTotal,
+    required this.donationTotal,
+    required this.total,
+  });
+
+  final String playerName;
+  final String playerType;
+  final int saleCount;
+  final List<PlayerPdfItemRow> items;
+  final double cashTotal;
+  final double paypalTotal;
+  final double sumupTotal;
+  final double donationTotal;
+  final double total;
+}
+
+class PlayerPdfItemRow {
+  const PlayerPdfItemRow({
+    required this.name,
+    required this.unitPrice,
+    required this.tariff,
+    required this.quantity,
+    required this.cashTotal,
+    required this.paypalTotal,
+    required this.sumupTotal,
+    required this.total,
+  });
+
+  final String name;
+  final double unitPrice;
+  final String tariff;
+  final int quantity;
+  final double cashTotal;
+  final double paypalTotal;
+  final double sumupTotal;
+  final double total;
+}
+
+Future<void> exportPlayersPdf(
+    BuildContext context, AppController controller) async {
+  try {
+    final rows = _playerPdfRows(controller);
+    if (rows.isEmpty) {
+      snack(context, 'Aucune vente à exporter');
+      return;
+    }
+
+    final bytes = await _buildPlayersPdf(controller, rows);
+    final date = DateTime.now();
+    final fileName =
+        'joueurs_airsoft_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}.pdf';
+    final savedFile = await _savePdfFile(fileName, bytes);
+    final name = savedFile['name'] ?? fileName;
+    if (context.mounted)
+      snack(context, 'PDF enregistré dans Downloads : $name');
+  } on PlatformException catch (error) {
+    if (context.mounted) {
+      snack(context, 'Export PDF impossible : ${error.message ?? error.code}');
+    }
+  } catch (error) {
+    if (context.mounted) snack(context, 'Export PDF impossible : $error');
+  }
+}
+
+List<PlayerPdfRow> _playerPdfRows(AppController controller) {
+  final grouped = <String, List<Sale>>{};
+  for (final sale in controller.sales) {
+    grouped.putIfAbsent(sale.playerId, () => []).add(sale);
+  }
+
+  final rows = grouped.values.map((sales) {
+    final items = <String,
+        ({
+      String name,
+      double unitPrice,
+      String tariff,
+      int quantity,
+      double cash,
+      double paypal,
+      double sumup,
+      double total
+    })>{};
+    var cashTotal = 0.0;
+    var paypalTotal = 0.0;
+    var sumupTotal = 0.0;
+    var donationTotal = 0.0;
+    var total = 0.0;
+
+    for (final sale in sales) {
+      total += sale.total;
+      donationTotal += sale.donation;
+      switch (sale.payment) {
+        case 'ESP':
+          cashTotal += sale.total;
+        case 'PayPal':
+          paypalTotal += sale.total;
+        case 'SumUp':
+          sumupTotal += sale.total;
+      }
+      for (final item in sale.items) {
+        final tariff = _pdfSaleTariff(sale);
+        final itemKey = '${item.name}|${item.price.toStringAsFixed(2)}|$tariff';
+        final current = items[itemKey] ??
+            (
+              name: item.name,
+              unitPrice: item.price,
+              tariff: tariff,
+              quantity: 0,
+              cash: 0.0,
+              paypal: 0.0,
+              sumup: 0.0,
+              total: 0.0
+            );
+        final lineTotal = item.price * item.quantity;
+        items[itemKey] = (
+          name: current.name,
+          unitPrice: current.unitPrice,
+          tariff: current.tariff,
+          quantity: current.quantity + item.quantity,
+          cash: current.cash + (sale.payment == 'ESP' ? lineTotal : 0),
+          paypal: current.paypal + (sale.payment == 'PayPal' ? lineTotal : 0),
+          sumup: current.sumup + (sale.payment == 'SumUp' ? lineTotal : 0),
+          total: current.total + lineTotal,
+        );
+      }
+    }
+
+    final itemRows = items.entries
+        .map((entry) => PlayerPdfItemRow(
+              name: entry.value.name,
+              unitPrice: entry.value.unitPrice,
+              tariff: entry.value.tariff,
+              quantity: entry.value.quantity,
+              cashTotal: entry.value.cash,
+              paypalTotal: entry.value.paypal,
+              sumupTotal: entry.value.sumup,
+              total: entry.value.total,
+            ))
+        .toList()
+      ..sort((a, b) => b.total.compareTo(a.total));
+    return PlayerPdfRow(
+      playerName: sales.first.playerName,
+      playerType: sales.first.playerType,
+      saleCount: sales.length,
+      items: itemRows,
+      cashTotal: cashTotal,
+      paypalTotal: paypalTotal,
+      sumupTotal: sumupTotal,
+      donationTotal: donationTotal,
+      total: total,
+    );
+  }).toList();
+
+  rows.sort((a, b) => b.total.compareTo(a.total));
+  return rows;
+}
+
+Future<Uint8List> _buildPlayersPdf(
+    AppController controller, List<PlayerPdfRow> rows) async {
+  final document = pw.Document();
+  final date = DateTime.now();
+  final total = rows.fold<double>(0, (sum, row) => sum + row.total);
+  final donations = rows.fold<double>(0, (sum, row) => sum + row.donationTotal);
+  final saleCount = rows.fold<int>(0, (sum, row) => sum + row.saleCount);
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      build: (context) => [
+        pw.Center(
+          child: pw.Text(
+            'CAISSE AIRSOFT',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+        ),
+        pw.SizedBox(height: 5),
+        pw.Center(
+          child: pw.Text(
+            dateLabel(date),
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ),
+        pw.Divider(color: PdfColors.grey500),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          'HISTORIQUE PAR JOUEUR',
+          style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.Container(height: 1.2, color: PdfColors.grey900),
+        pw.SizedBox(height: 16),
+        pw.Row(
+          children: [
+            _pdfMetric('JOUEURS', '${rows.length}'),
+            pw.SizedBox(width: 6),
+            _pdfMetric('VENTES', '$saleCount'),
+            pw.SizedBox(width: 6),
+            _pdfMetric('TOTAL', _pdfMoney(total)),
+            pw.SizedBox(width: 6),
+            _pdfMetric('DONS', _pdfMoney(donations)),
+          ],
+        ),
+        pw.SizedBox(height: 28),
+        pw.Table(
+          border: pw.TableBorder(
+            horizontalInside:
+                const pw.BorderSide(color: PdfColors.grey600, width: 0.35),
+            bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+          ),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2.6),
+            1: pw.FlexColumnWidth(0.8),
+            2: pw.FlexColumnWidth(0.5),
+            3: pw.FlexColumnWidth(3.0),
+            4: pw.FlexColumnWidth(1.0),
+            5: pw.FlexColumnWidth(0.9),
+            6: pw.FlexColumnWidth(0.9),
+            7: pw.FlexColumnWidth(0.8),
+            8: pw.FlexColumnWidth(1.1),
+          },
+          children: [
+            _pdfTableRow(
+              [
+                'JOUEUR',
+                'TYPE',
+                'N',
+                'DETAIL ACHATS',
+                'ESP',
+                'PP',
+                'SUM',
+                'DONS',
+                'TOTAL'
+              ],
+              header: true,
+            ),
+            for (var i = 0; i < rows.length; i++) ..._pdfPlayerRows(rows[i]),
+          ],
+        ),
+        pw.SizedBox(height: 12),
+        pw.Align(
+          alignment: pw.Alignment.centerRight,
+          child: pw.Text(
+            controller.session.isEmpty ? '' : 'Session : ${controller.session}',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  return document.save();
+}
+
+List<pw.TableRow> _pdfPlayerRows(PlayerPdfRow row) {
+  return [
+    _pdfTableRow(
+      [
+        row.playerName,
+        _pdfPlayerType(row.playerType),
+        '${row.saleCount}',
+        '',
+        _pdfMoney(row.cashTotal),
+        _pdfMoney(row.paypalTotal),
+        _pdfMoney(row.sumupTotal),
+        _pdfMoney(row.donationTotal),
+        _pdfMoney(row.total),
+      ],
+      player: true,
+    ),
+    for (final item in row.items)
+      _pdfTableRow(
+        [
+          '',
+          '',
+          '${item.quantity}',
+          '${item.name} (${_pdfPrice(item.unitPrice)}) [${item.tariff}]',
+          _pdfMoney(item.cashTotal),
+          _pdfMoney(item.paypalTotal),
+          _pdfMoney(item.sumupTotal),
+          '',
+          _pdfMoney(item.total),
+        ],
+        item: true,
+      ),
+  ];
+}
+
+pw.Widget _pdfMetric(String label, String value) {
+  return pw.Expanded(
+    child: pw.Container(
+      height: 52,
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey500, width: 0.6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label,
+              style:
+                  const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
+          pw.Text(value,
+              style:
+                  pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        ],
+      ),
+    ),
+  );
+}
+
+pw.TableRow _pdfTableRow(List<String> cells,
+    {bool header = false, bool player = false, bool item = false}) {
+  final background = header
+      ? PdfColors.white
+      : player
+          ? PdfColors.grey300
+          : PdfColors.white;
+  final textColor = PdfColors.black;
+  return pw.TableRow(
+    decoration: pw.BoxDecoration(color: background),
+    children: [
+      for (var i = 0; i < cells.length; i++)
+        pw.Padding(
+          padding: pw.EdgeInsets.fromLTRB(
+            i == 3 && item ? 12 : 5,
+            player ? 7 : 6,
+            5,
+            player ? 7 : 6,
+          ),
+          child: pw.Text(
+            cells[i],
+            maxLines: i == 3 ? 2 : 1,
+            overflow: pw.TextOverflow.clip,
+            textAlign: i >= 4 ? pw.TextAlign.right : pw.TextAlign.left,
+            style: pw.TextStyle(
+              fontSize: header ? 7 : 7.5,
+              color: textColor,
+              fontWeight:
+                  header || player ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+String _pdfMoney(num value) =>
+    value.abs() < 0.005 ? '-' : value.toStringAsFixed(2);
+
+String _pdfPrice(num value) => value.toStringAsFixed(2);
+
+String _pdfPlayerType(String value) {
+  return value == 'membre' ? 'ADH' : 'PUB';
+}
+
+String _pdfSaleTariff(Sale sale) {
+  return sale.tariff == 'adherent' || sale.playerType == 'membre'
+      ? 'ADH'
+      : 'PUB';
+}
+
+Future<Map<String, String>> _savePdfFile(
+    String fileName, Uint8List bytes) async {
+  if (Platform.isAndroid) {
+    final savedFile = await _fileImportChannel.invokeMapMethod<String, String>(
+      'savePdf',
+      {'name': fileName, 'bytes': bytes},
+    );
+    return savedFile ?? {'name': fileName};
+  }
+
+  final downloads = await getDownloadsDirectory();
+  final directory = downloads ?? Directory.current;
+  final safeName = _safePdfFileName(fileName);
+  final file = File(path.join(directory.path, safeName));
+  await file.writeAsBytes(bytes, flush: true);
+  return {'name': safeName, 'path': file.path};
+}
+
+String _safePdfFileName(String name) {
+  final baseName = name
+      .trim()
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
+      .replaceAll(RegExp(r'^[-._]+|[-._]+$'), '');
+  final safe = baseName.isEmpty ? 'joueurs_airsoft.pdf' : baseName;
+  return safe.toLowerCase().endsWith('.pdf') ? safe : '$safe.pdf';
 }
 
 Future<void> copyBackup(BuildContext context, AppController controller) async {
