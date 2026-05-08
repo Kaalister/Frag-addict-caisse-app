@@ -1519,7 +1519,7 @@ class LocalDatabase {
     };
   }
 
-  Future<void> saveAll(AppController state) async {
+  Future<void> saveAll(AppController state, {bool markUpdated = true}) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     final session = state.activeSession;
@@ -1546,9 +1546,11 @@ class LocalDatabase {
       await txn.insert('app_settings',
           {'key': 'active_session_id', 'value': session.id, 'updated_at': now},
           conflictAlgorithm: ConflictAlgorithm.replace);
-      await txn.insert('app_settings',
-          {'key': 'local_updated_at', 'value': now, 'updated_at': now},
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      if (markUpdated) {
+        await txn.insert('app_settings',
+            {'key': 'local_updated_at', 'value': now, 'updated_at': now},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
 
       final uniqueAllPlayers = <String, Player>{
         for (final player in [...state.allPlayers, ...state.players])
@@ -1765,6 +1767,34 @@ class LocalDatabase {
       await insertRows('app_settings', 'appSettings');
     });
   }
+
+  Future<bool> hasOnlyBootstrapData() async {
+    final db = await database;
+    Future<int> count(String table) async =>
+        Sqflite.firstIntValue(
+            await db.rawQuery('SELECT COUNT(*) FROM $table')) ??
+        0;
+
+    final players = await count('players');
+    final sessionPlayers = await count('session_players');
+    final sales = await count('sales');
+    final saleItems = await count('sale_items');
+    final stockMovements = await count('stock_movements');
+    final cashCounts = await count('cash_counts');
+    final cashCountLines = await count('cash_count_lines');
+    final sessions = await count('sessions');
+    final articles = await count('articles');
+
+    return players == 0 &&
+        sessionPlayers == 0 &&
+        sales == 0 &&
+        saleItems == 0 &&
+        stockMovements == 0 &&
+        cashCounts == 0 &&
+        cashCountLines == 0 &&
+        sessions <= 1 &&
+        articles <= defaultArticles().length;
+  }
 }
 
 enum FirebaseSyncAction { disabled, noUser, pushed, pulled, unchanged, error }
@@ -1807,18 +1837,19 @@ class FirebaseSyncService {
       if (remote.exists) {
         final data = remote.data() ?? const <String, dynamic>{};
         final remoteUpdatedAt = _remoteUpdatedAt(data);
-        if (remoteUpdatedAt != null &&
+        final payload =
+            Map<String, dynamic>.from(data['payload'] as Map? ?? const {});
+        final shouldPull = payload.isNotEmpty &&
+            remoteUpdatedAt != null &&
             (localUpdatedAt == null ||
-                remoteUpdatedAt.isAfter(localUpdatedAt))) {
-          final payload =
-              Map<String, dynamic>.from(data['payload'] as Map? ?? const {});
-          if (payload.isNotEmpty) {
-            await database.replaceFromExport(payload);
-            await database.saveSyncMetadata(remoteUpdatedAt);
-            return FirebaseSyncResult(
-                FirebaseSyncAction.pulled, 'Données Firebase récupérées',
-                syncedAt: remoteUpdatedAt);
-          }
+                remoteUpdatedAt.isAfter(localUpdatedAt) ||
+                await database.hasOnlyBootstrapData());
+        if (shouldPull) {
+          await database.replaceFromExport(payload);
+          await database.saveSyncMetadata(remoteUpdatedAt);
+          return FirebaseSyncResult(
+              FirebaseSyncAction.pulled, 'Données Firebase récupérées',
+              syncedAt: remoteUpdatedAt);
         }
         if (localUpdatedAt == null ||
             (remoteUpdatedAt != null &&
@@ -1961,7 +1992,7 @@ class AppController extends ChangeNotifier {
       cashStart = await _database.loadCash(activeSession!.id, 'start');
       cashEnd = await _database.loadCash(activeSession!.id, 'end');
       if (storedArticles.isEmpty) {
-        await persist();
+        await persist(markUpdated: false);
       }
     } catch (_) {
       articles = defaultArticles();
@@ -1971,12 +2002,12 @@ class AppController extends ChangeNotifier {
     loading = false;
     notifyListeners();
     if (_syncService.isAvailable) {
-      await syncNow(reloadAfterPull: false);
+      await syncNow();
     }
   }
 
-  Future<void> persist() async {
-    await _database.saveAll(this);
+  Future<void> persist({bool markUpdated = true}) async {
+    await _database.saveAll(this, markUpdated: markUpdated);
     _cacheActiveSessionSales();
     if (!_suspendAutoSync && _syncService.isAvailable) {
       final result = await _syncService.synchronize(_database);
