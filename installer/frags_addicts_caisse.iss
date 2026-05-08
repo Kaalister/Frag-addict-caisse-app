@@ -14,6 +14,7 @@ DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist
 OutputBaseFilename=FragsAddictsCaisseSetup-{#AppVersion}
+SetupIconFile=..\windows\runner\resources\app_icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -30,8 +31,8 @@ Name: "desktopicon"; Description: "Créer un raccourci sur le bureau"; GroupDesc
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Lancer {#AppName}"; Flags: nowait postinstall skipifsilent

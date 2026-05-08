@@ -1833,6 +1833,7 @@ class FirebaseSyncService {
           FirebaseSyncAction.pushed, 'Données envoyées vers Firebase',
           syncedAt: updatedAt);
     } catch (exception) {
+      debugPrint('Firebase sync failed: $exception');
       return FirebaseSyncResult(
           FirebaseSyncAction.error, _friendlySyncError(exception));
     }
@@ -1855,9 +1856,16 @@ class FirebaseSyncService {
       return 'Accès Firestore refusé. Vérifie les règles dans Firebase Console.';
     }
     if (exception is FirebaseException) {
-      return 'Synchronisation Firebase impossible (${exception.code})';
+      final detail = exception.message ?? exception.code;
+      return 'Synchronisation Firebase impossible (${exception.code}) : ${_shortError(detail)}';
     }
-    return 'Synchronisation Firebase impossible';
+    return 'Synchronisation Firebase impossible : ${_shortError(exception)}';
+  }
+
+  String _shortError(Object detail) {
+    final text = detail.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length <= 180) return text;
+    return '${text.substring(0, 177)}...';
   }
 }
 
