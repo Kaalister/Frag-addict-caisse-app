@@ -4,6 +4,7 @@
   #define AppVersion "1.0.0"
 #endif
 #define AppExeName "frags_addicts_caisse.exe"
+#define AppIconName "app_icon.ico"
 
 [Setup]
 AppId={{6F24919C-9C7D-42AC-8DF2-690A7A7E8B2A}
@@ -15,6 +16,7 @@ DefaultGroupName={#AppName}
 OutputDir=..\dist
 OutputBaseFilename=FragsAddictsCaisseSetup-{#AppVersion}
 SetupIconFile=..\windows\runner\resources\app_icon.ico
+UninstallDisplayIcon={app}\{#AppIconName}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -29,10 +31,11 @@ Name: "desktopicon"; Description: "Créer un raccourci sur le bureau"; GroupDesc
 
 [Files]
 Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\windows\runner\resources\app_icon.ico"; DestDir: "{app}"; DestName: "{#AppIconName}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; IconIndex: 0; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppIconName}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppIconName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Lancer {#AppName}"; Flags: nowait postinstall skipifsilent

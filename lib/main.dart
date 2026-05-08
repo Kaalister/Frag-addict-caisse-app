@@ -850,11 +850,25 @@ class LocalDatabase {
 
   Future<Database> get database async {
     if (_db != null) return _db!;
-    final dbPath =
-        path.join(await getDatabasesPath(), 'frags_addicts_caisse.db');
+    final dbPath = await _databasePath();
     _db = await openDatabase(dbPath,
         version: 4, onCreate: _create, onUpgrade: _upgrade);
     return _db!;
+  }
+
+  Future<String> _databasePath() async {
+    const fileName = 'frags_addicts_caisse.db';
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      final supportDirectory = await getApplicationSupportDirectory();
+      final directory =
+          Directory(path.join(supportDirectory.path, 'FragsAddictsCaisse'));
+      await directory.create(recursive: true);
+      return path.join(directory.path, fileName);
+    }
+
+    final directory = Directory(await getDatabasesPath());
+    await directory.create(recursive: true);
+    return path.join(directory.path, fileName);
   }
 
   Future<void> _create(Database db, int version) async {
