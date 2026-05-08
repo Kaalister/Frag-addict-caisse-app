@@ -3017,7 +3017,7 @@ class ProductsPanel extends StatelessWidget {
           child: GridView.builder(
             padding: const EdgeInsets.all(10),
             gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 150,
+              maxCrossAxisExtent: 170,
               mainAxisExtent: 138,
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
@@ -3085,16 +3085,36 @@ class ProductsPanel extends StatelessWidget {
                                   const TextStyle(fontWeight: FontWeight.w800)),
                         ),
                       ),
-                      Text(price == 0 ? 'Libre' : money(price),
-                          style: const TextStyle(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w900)),
-                      if (controller.memberTariff && article.memberPrice > 0)
-                        const Text('ADHÉRENT',
-                            style: TextStyle(
-                                color: AppColors.accent2,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(price == 0 ? 'Libre' : money(price),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: AppColors.accent,
+                                    fontWeight: FontWeight.w900)),
+                          ),
+                          if (controller.memberTariff &&
+                              article.memberPrice > 0) ...[
+                            const SizedBox(width: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: AppColors.accent2),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text('ADH',
+                                  style: TextStyle(
+                                      color: AppColors.accent2,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800)),
+                            ),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ),
