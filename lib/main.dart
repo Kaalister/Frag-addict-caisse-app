@@ -3759,24 +3759,20 @@ class KpiPage extends StatelessWidget {
         .where((r) =>
             r.article.stock > 0 && r.article.stock <= r.article.threshold)
         .length;
-    rows.sort((a, b) {
-      final aScore = a.article.stock == 0
-          ? 3
-          : a.article.stock <= a.article.threshold
-              ? 2
-              : 1;
-      final bScore = b.article.stock == 0
-          ? 3
-          : b.article.stock <= b.article.threshold
-              ? 2
-              : 1;
-      if (aScore != bScore) return bScore.compareTo(aScore);
-      return b.rotation.compareTo(a.rotation);
-    });
+    rows.sort(_compareKpiRows);
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        const SectionTitle('Stats achats & stock'),
+        SectionTitle(
+          'Stats achats & stock',
+          trailing: rows.isEmpty
+              ? null
+              : FilledButton.tonalIcon(
+                  onPressed: () => exportKpiPdf(context, controller),
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Exporter'),
+                ),
+        ),
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -3873,10 +3869,25 @@ class KpiRow {
   final int suggestion;
 }
 
-List<KpiRow> kpiRows(AppController controller) {
+int _compareKpiRows(KpiRow a, KpiRow b) {
+  final aScore = a.article.stock == 0
+      ? 3
+      : a.article.stock <= a.article.threshold
+          ? 2
+          : 1;
+  final bScore = b.article.stock == 0
+      ? 3
+      : b.article.stock <= b.article.threshold
+          ? 2
+          : 1;
+  if (aScore != bScore) return bScore.compareTo(aScore);
+  return b.rotation.compareTo(a.rotation);
+}
+
+List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
   final sold = <String, ({int quantity, double ca})>{};
   final days = <String>{};
-  for (final sale in controller.sales) {
+  for (final sale in sales ?? controller.sales) {
     days.add(dateLabel(sale.createdAt));
     for (final item in sale.items) {
       final current = sold[item.articleId] ?? (quantity: 0, ca: 0.0);
@@ -5640,7 +5651,7 @@ List<pw.TableRow> _pdfPlayerRows(PlayerPdfRow row) {
   ];
 }
 
-pw.Widget _pdfMetric(String label, String value) {
+pw.Widget _pdfMetric(String label, String value, {PdfColor? valueColor}) {
   return pw.Expanded(
     child: pw.Container(
       height: 52,
@@ -5656,8 +5667,10 @@ pw.Widget _pdfMetric(String label, String value) {
               style:
                   const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700)),
           pw.Text(value,
-              style:
-                  pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              style: pw.TextStyle(
+                  fontSize: 12,
+                  color: valueColor ?? PdfColors.black,
+                  fontWeight: pw.FontWeight.bold)),
         ],
       ),
     ),
@@ -5665,7 +5678,11 @@ pw.Widget _pdfMetric(String label, String value) {
 }
 
 pw.TableRow _pdfTableRow(List<String> cells,
-    {bool header = false, bool player = false, bool item = false}) {
+    {bool header = false,
+    bool player = false,
+    bool item = false,
+    Map<int, PdfColor> textColors = const {},
+    Set<int> boldColumns = const {}}) {
   final background = header
       ? PdfColors.white
       : player
@@ -5690,9 +5707,10 @@ pw.TableRow _pdfTableRow(List<String> cells,
             textAlign: i >= 4 ? pw.TextAlign.right : pw.TextAlign.left,
             style: pw.TextStyle(
               fontSize: header ? 7 : 7.5,
-              color: textColor,
-              fontWeight:
-                  header || player ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: textColors[i] ?? textColor,
+              fontWeight: header || player || boldColumns.contains(i)
+                  ? pw.FontWeight.bold
+                  : pw.FontWeight.normal,
             ),
           ),
         ),
@@ -5714,6 +5732,537 @@ String _pdfSaleTariff(Sale sale) {
       ? 'ADH'
       : 'PUB';
 }
+
+Future<void> exportKpiPdf(
+    BuildContext context, AppController controller) async {
+  try {
+    final rows = kpiRows(controller)..sort(_compareKpiRows);
+    if (rows.isEmpty) {
+      snack(context, 'Aucune statistique à exporter');
+      return;
+    }
+
+    final bytes = await _buildKpiPdf(controller, rows);
+    final date = DateTime.now();
+    final fileName =
+        'kpi_airsoft_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}${date.second.toString().padLeft(2, '0')}.pdf';
+    final savedFile = await _savePdfFile(fileName, bytes);
+    final name = savedFile['name'] ?? fileName;
+    if (context.mounted) {
+      snack(context, 'PDF KPI enregistré dans Downloads : $name');
+    }
+  } on PlatformException catch (error) {
+    if (context.mounted) {
+      snack(context, 'Export KPI impossible : ${error.message ?? error.code}');
+    }
+  } catch (error) {
+    if (context.mounted) {
+      snack(context, 'Export KPI impossible : $error');
+    }
+  }
+}
+
+Future<Uint8List> _buildKpiPdf(
+    AppController controller, List<KpiRow> rows) async {
+  final document = pw.Document();
+  final date = DateTime.now();
+  final totalCA = rows.fold<double>(0, (total, row) => total + row.ca);
+  final ruptures = rows.where((row) => row.article.stock == 0).length;
+  final alertes = rows
+      .where((row) =>
+          row.article.stock > 0 && row.article.stock <= row.article.threshold)
+      .length;
+  final reappro = rows.where((row) => row.suggestion > 0).length;
+  final topCa = [...rows]..sort((a, b) => b.ca.compareTo(a.ca));
+  final topSold = [...rows]..sort((a, b) => b.sold.compareTo(a.sold));
+  final categoryCa = _kpiCategoryCa(rows);
+  final sessionCa = _kpiSessionCa(controller);
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      footer: (context) => _pdfFooter(
+          date, context.pageNumber, context.pagesCount, controller.session),
+      build: (context) => [
+        _pdfKpiHeader(date, controller),
+        pw.SizedBox(height: 16),
+        pw.Row(
+          children: [
+            _pdfMetric('RUPTURES', '$ruptures',
+                valueColor:
+                    ruptures == 0 ? PdfColors.green700 : PdfColors.red700),
+            pw.SizedBox(width: 6),
+            _pdfMetric('EN ALERTE', '$alertes',
+                valueColor:
+                    alertes == 0 ? PdfColors.green700 : PdfColors.orange700),
+            pw.SizedBox(width: 6),
+            _pdfMetric('CA TOTAL', _pdfMoney(totalCA),
+                valueColor: PdfColors.green700),
+            pw.SizedBox(width: 6),
+            _pdfMetric('A REAPPRO', '$reappro'),
+          ],
+        ),
+        pw.SizedBox(height: 26),
+        _pdfSectionHeader('DETAIL PAR ARTICLE'),
+        pw.Table(
+          border: pw.TableBorder(
+            horizontalInside:
+                const pw.BorderSide(color: PdfColors.grey600, width: 0.35),
+            bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+          ),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2.8),
+            1: pw.FlexColumnWidth(0.8),
+            2: pw.FlexColumnWidth(1.1),
+            3: pw.FlexColumnWidth(0.9),
+            4: pw.FlexColumnWidth(0.8),
+            5: pw.FlexColumnWidth(0.9),
+            6: pw.FlexColumnWidth(1.0),
+          },
+          children: [
+            _pdfTableRow(
+              ['ARTICLE', 'VENDU', 'CA', 'STOCK', 'ROT.', 'SUGG.', 'STATUT'],
+              header: true,
+            ),
+            for (final row in rows)
+              _pdfTableRow(
+                [
+                  row.article.name,
+                  row.sold == 0 ? '-' : '${row.sold}',
+                  _pdfMoney(row.ca),
+                  '${row.stockRest}/${row.stockInitial}',
+                  _pdfPercent(row.rotation),
+                  row.suggestion == 0 ? '-' : '>= ${row.suggestion}',
+                  _kpiStatus(row),
+                ],
+                textColors: {6: _kpiStatusColor(row)},
+                boldColumns: const {6},
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      footer: (context) => _pdfFooter(
+          date, context.pageNumber, context.pagesCount, controller.session),
+      build: (context) => [
+        _pdfSectionHeader('1. CA PAR ARTICLE (TOP 10)'),
+        _pdfBarChart(
+          topCa.take(10).map((row) {
+            return (
+              label: row.article.name,
+              value: row.ca,
+              display: _pdfMoney(row.ca)
+            );
+          }).toList(),
+          PdfColors.blue700,
+        ),
+        pw.SizedBox(height: 28),
+        _pdfSectionHeader('2. QUANTITES VENDUES (TOP 10)'),
+        _pdfBarChart(
+          topSold.take(10).map((row) {
+            return (
+              label: row.article.name,
+              value: row.sold.toDouble(),
+              display: '${row.sold} unités'
+            );
+          }).toList(),
+          PdfColors.green700,
+        ),
+        pw.SizedBox(height: 28),
+        _pdfSectionHeader('3. STOCK RESTANT VS VENDU'),
+        _pdfStockChart(rows.take(12).toList()),
+      ],
+    ),
+  );
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      footer: (context) => _pdfFooter(
+          date, context.pageNumber, context.pagesCount, controller.session),
+      build: (context) => [
+        _pdfSectionHeader('4. REPARTITION CA PAR CATEGORIE'),
+        _pdfPieChart(categoryCa, totalCA),
+        pw.SizedBox(height: 32),
+        _pdfSectionHeader('5. EVOLUTION CA PAR PARTIE'),
+        _pdfSessionLineChart(sessionCa),
+      ],
+    ),
+  );
+
+  return document.save();
+}
+
+pw.Widget _pdfKpiHeader(DateTime date, AppController controller) {
+  final session = controller.session.isEmpty ? 'Partie' : controller.session;
+  return pw.Column(
+    children: [
+      pw.Center(
+        child: pw.Text(
+          'CAISSE AIRSOFT - KPI ACHATS & STOCK',
+          style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+        ),
+      ),
+      pw.SizedBox(height: 5),
+      pw.Center(
+        child: pw.Text(
+          '${dateLabel(date)} - $session',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+        ),
+      ),
+      pw.Divider(color: PdfColors.grey500),
+    ],
+  );
+}
+
+pw.Widget _pdfSectionHeader(String title) {
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      pw.Text(
+        title,
+        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+      ),
+      pw.Container(height: 1.2, color: PdfColors.grey900),
+      pw.SizedBox(height: 14),
+    ],
+  );
+}
+
+pw.Widget _pdfFooter(
+    DateTime date, int pageNumber, int pageCount, String session) {
+  final sessionLabel = session.isEmpty ? '' : ' - $session';
+  return pw.Align(
+    alignment: pw.Alignment.center,
+    child: pw.Text(
+      'Caisse Airsoft - ${dateLabel(date)}$sessionLabel - Page $pageNumber/$pageCount',
+      style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+    ),
+  );
+}
+
+pw.Widget _pdfBarChart(
+  List<({String label, double value, String display})> entries,
+  PdfColor color,
+) {
+  if (entries.isEmpty) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10),
+      child: pw.Text('Aucune donnée',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+    );
+  }
+
+  final maxValue = max(1.0, entries.fold<double>(0, (m, e) => max(m, e.value)));
+  return pw.Column(
+    children: [
+      for (final entry in entries)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 8),
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.SizedBox(
+                width: 150,
+                child: pw.Text(entry.label,
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
+                    style: const pw.TextStyle(
+                        fontSize: 7, color: PdfColors.grey800)),
+              ),
+              pw.SizedBox(width: 10),
+              pw.Container(
+                width: max(2, 250 * entry.value / maxValue).toDouble(),
+                height: 9,
+                color: color,
+              ),
+              pw.SizedBox(width: 8),
+              pw.Text(entry.display,
+                  style: pw.TextStyle(
+                      fontSize: 7, fontWeight: pw.FontWeight.bold)),
+            ],
+          ),
+        ),
+    ],
+  );
+}
+
+pw.Widget _pdfPieChart(Map<String, double> categoryCa, double totalCA) {
+  final entries = categoryCa.entries.where((entry) => entry.value > 0).toList();
+  if (entries.isEmpty || totalCA <= 0) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10),
+      child: pw.Text('Aucune donnée',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+    );
+  }
+
+  return pw.Row(
+    crossAxisAlignment: pw.CrossAxisAlignment.center,
+    children: [
+      pw.SizedBox(
+        width: 230,
+        height: 210,
+        child: pw.Chart(
+          grid: pw.PieGrid(startAngle: -pi / 2),
+          datasets: [
+            for (var i = 0; i < entries.length; i++)
+              pw.PieDataSet(
+                value: entries[i].value,
+                color: _kpiChartColor(i),
+                borderColor: PdfColors.white,
+              ),
+          ],
+        ),
+      ),
+      pw.SizedBox(width: 22),
+      pw.Expanded(
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < entries.length; i++)
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 8),
+                child: pw.Row(
+                  crossAxisAlignment: pw.CrossAxisAlignment.center,
+                  children: [
+                    pw.Container(
+                      width: 10,
+                      height: 10,
+                      color: _kpiChartColor(i),
+                    ),
+                    pw.SizedBox(width: 7),
+                    pw.Expanded(
+                      child: pw.Text(
+                        entries[i].key,
+                        maxLines: 1,
+                        overflow: pw.TextOverflow.clip,
+                        style: const pw.TextStyle(fontSize: 7.5),
+                      ),
+                    ),
+                    pw.SizedBox(width: 8),
+                    pw.Text(
+                      '${_pdfMoney(entries[i].value)} - ${(entries[i].value / totalCA * 100).round()}%',
+                      style: pw.TextStyle(
+                          fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+pw.Widget _pdfSessionLineChart(
+    List<({SessionRecord session, double ca})> entries) {
+  if (entries.isEmpty) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10),
+      child: pw.Text('Aucune donnée',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+    );
+  }
+
+  final maxValue = max(1.0, entries.fold<double>(0, (m, e) => max(m, e.ca)));
+  final yMax = _niceChartMax(maxValue);
+  final xAxisValues = entries.length == 1
+      ? const [0, 1]
+      : List<int>.generate(entries.length, (i) => i);
+
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      pw.SizedBox(
+        height: 210,
+        child: pw.Chart(
+          grid: pw.CartesianGrid(
+            xAxis: pw.FixedAxis<int>(
+              xAxisValues,
+              format: (value) {
+                final index = value.round();
+                if (index < 0 || index >= entries.length) return '';
+                return dateLabel(entries[index].session.eventDate)
+                    .substring(0, 5);
+              },
+              textStyle:
+                  const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+              ticks: true,
+            ),
+            yAxis: pw.FixedAxis<double>(
+              [0, yMax / 2, yMax],
+              format: (value) => value == 0 ? '0' : value.round().toString(),
+              textStyle:
+                  const pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+              divisions: true,
+              divisionsColor: PdfColors.grey300,
+            ),
+          ),
+          datasets: [
+            pw.LineDataSet<pw.PointChartValue>(
+              data: [
+                for (var i = 0; i < entries.length; i++)
+                  pw.PointChartValue(i.toDouble(), entries[i].ca),
+              ],
+              color: PdfColors.cyan700,
+              lineColor: PdfColors.cyan700,
+              lineWidth: 2.2,
+              pointSize: 3.5,
+              drawSurface: true,
+              surfaceColor: PdfColors.cyan100,
+              surfaceOpacity: 0.35,
+            ),
+          ],
+        ),
+      ),
+      pw.SizedBox(height: 12),
+      pw.Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        children: [
+          for (final entry in entries)
+            pw.Text(
+              '${dateLabel(entry.session.eventDate)} ${entry.session.name}: ${_pdfMoney(entry.ca)}',
+              style:
+                  const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey700),
+            ),
+        ],
+      ),
+    ],
+  );
+}
+
+pw.Widget _pdfStockChart(List<KpiRow> rows) {
+  if (rows.isEmpty) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 10),
+      child: pw.Text('Aucune donnée',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+    );
+  }
+
+  final maxStock =
+      max(1, rows.fold<int>(0, (m, row) => max(m, row.sold + row.stockRest)));
+  return pw.Column(
+    children: [
+      for (final row in rows)
+        pw.Padding(
+          padding: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Row(
+            children: [
+              pw.SizedBox(
+                width: 150,
+                child: pw.Text(row.article.name,
+                    maxLines: 1,
+                    overflow: pw.TextOverflow.clip,
+                    style: const pw.TextStyle(
+                        fontSize: 7, color: PdfColors.grey800)),
+              ),
+              pw.SizedBox(width: 10),
+              pw.Container(
+                width: max(2, 250 * row.sold / maxStock).toDouble(),
+                height: 9,
+                color: PdfColors.blue700,
+              ),
+              pw.Container(
+                width: max(2, 250 * row.stockRest / maxStock).toDouble(),
+                height: 9,
+                color: PdfColors.grey400,
+              ),
+              pw.SizedBox(width: 8),
+              pw.Text('V:${row.sold} R:${row.stockRest}',
+                  style: const pw.TextStyle(
+                      fontSize: 6.5, color: PdfColors.grey700)),
+            ],
+          ),
+        ),
+      pw.SizedBox(height: 4),
+      pw.Row(
+        children: [
+          pw.Container(width: 12, height: 7, color: PdfColors.blue700),
+          pw.SizedBox(width: 5),
+          pw.Text('Vendu', style: const pw.TextStyle(fontSize: 6.5)),
+          pw.SizedBox(width: 22),
+          pw.Container(width: 12, height: 7, color: PdfColors.grey400),
+          pw.SizedBox(width: 5),
+          pw.Text('Restant', style: const pw.TextStyle(fontSize: 6.5)),
+        ],
+      ),
+    ],
+  );
+}
+
+Map<String, double> _kpiCategoryCa(List<KpiRow> rows) {
+  final result = <String, double>{};
+  for (final row in rows) {
+    result[row.article.category] = (result[row.article.category] ?? 0) + row.ca;
+  }
+  final entries = result.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  return Map.fromEntries(entries);
+}
+
+List<({SessionRecord session, double ca})> _kpiSessionCa(
+    AppController controller) {
+  final sessions = [...controller.sessions]..sort((a, b) {
+      final dateCompare = a.eventDate.compareTo(b.eventDate);
+      if (dateCompare != 0) return dateCompare;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+  return [
+    for (final session in sessions)
+      (
+        session: session,
+        ca: controller
+            .salesForSession(session.id)
+            .fold<double>(0, (total, sale) => total + sale.totalArticles)
+      ),
+  ];
+}
+
+String _kpiStatus(KpiRow row) {
+  if (row.article.stock == 0) return 'RUPTURE';
+  if (row.article.stock <= row.article.threshold) return 'ALERTE';
+  return 'OK';
+}
+
+PdfColor _kpiStatusColor(KpiRow row) {
+  if (row.article.stock == 0) return PdfColors.red700;
+  if (row.article.stock <= row.article.threshold) return PdfColors.orange700;
+  return PdfColors.green700;
+}
+
+PdfColor _kpiChartColor(int index) {
+  const colors = [
+    PdfColors.blue700,
+    PdfColors.orange700,
+    PdfColors.green700,
+    PdfColors.purple700,
+    PdfColors.cyan700,
+    PdfColors.red700,
+    PdfColors.indigo700,
+    PdfColors.lime700,
+  ];
+  return colors[index % colors.length];
+}
+
+double _niceChartMax(double value) {
+  if (value <= 10) return 10;
+  final magnitude = pow(10, value.floor().toString().length - 1).toDouble();
+  return (value / magnitude).ceil() * magnitude;
+}
+
+String _pdfPercent(num value) => '${(value * 100).round()}%';
 
 Future<Map<String, String>> _savePdfFile(
     String fileName, Uint8List bytes) async {
