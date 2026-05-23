@@ -32,9 +32,28 @@ class MainActivity : FlutterActivity() {
                         call.argument("bytes"),
                         result
                     )
+                    "openUrl" -> openUrl(
+                        call.argument("url"),
+                        result
+                    )
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun openUrl(url: String?, result: MethodChannel.Result) {
+        if (url.isNullOrBlank()) {
+            result.error("invalid_url", "Lien de mise à jour invalide.", null)
+            return
+        }
+
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("open_url_failed", "Impossible d'ouvrir le lien de mise à jour.", error.message)
+        }
     }
 
     private fun saveJsonBackup(name: String?, content: String?, result: MethodChannel.Result) {

@@ -1,10 +1,11 @@
 import 'dart:convert';
-import 'dart:io' show Directory, File, Platform;
+import 'dart:io' show Directory, File, Platform, Process;
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
@@ -72,6 +73,166 @@ class VisualIdentity {
   static const name = 'Frags Addicts Tactical POS';
   static const mood = 'noir carbone, vert traceur, cyan instrumentation';
   static const radius = 8.0;
+}
+
+const _dataEnvironmentSuffix = kReleaseMode ? '' : '_dev';
+const _firebaseSnapshotId = kReleaseMode ? 'caisse-main' : 'caisse-dev';
+const _githubOwner = 'Kaalister';
+const _githubRepo = 'Frag-addict-caisse-app';
+const _appBuildVersion =
+    String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
+const _latestReleaseApi =
+    'https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest';
+
+String _databaseFileName(String? userScopeId) {
+  if (userScopeId == null) {
+    return 'frags_addicts_caisse$_dataEnvironmentSuffix.db';
+  }
+  return 'frags_addicts_caisse${_dataEnvironmentSuffix}_$userScopeId.db';
+}
+
+class AppUpdateInfo {
+  const AppUpdateInfo({
+    required this.latestVersion,
+    required this.currentVersion,
+    required this.downloadUrl,
+    required this.releaseUrl,
+    required this.assetName,
+    required this.publishedAt,
+  });
+
+  final String latestVersion;
+  final String currentVersion;
+  final String downloadUrl;
+  final String releaseUrl;
+  final String assetName;
+  final DateTime? publishedAt;
+}
+
+class AppUpdateResult {
+  const AppUpdateResult({
+    this.update,
+    this.latestVersion,
+    this.error,
+  });
+
+  final AppUpdateInfo? update;
+  final String? latestVersion;
+  final String? error;
+
+  bool get requiresUpdate => update != null;
+}
+
+class AppUpdateService {
+  static bool get supportedPlatform => Platform.isAndroid || Platform.isWindows;
+
+  static Future<AppUpdateResult> check() async {
+    if (!supportedPlatform) {
+      return const AppUpdateResult(latestVersion: _appBuildVersion);
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse(_latestReleaseApi),
+        headers: const {
+          'Accept': 'application/vnd.github+json',
+          'User-Agent': 'FragsAddictsCaisseUpdateChecker',
+        },
+      );
+      if (response.statusCode != 200) {
+        return AppUpdateResult(
+            error:
+                'GitHub a répondu ${response.statusCode}. Vérification impossible.');
+      }
+
+      final payload = jsonDecode(response.body);
+      if (payload is! Map<String, dynamic>) {
+        return const AppUpdateResult(
+            error: 'Réponse GitHub invalide. Vérification impossible.');
+      }
+
+      final tag = '${payload['tag_name'] ?? ''}'.trim();
+      final latestVersion = _cleanVersion(tag);
+      if (latestVersion.isEmpty) {
+        return const AppUpdateResult(
+            error: 'La dernière Release GitHub ne contient pas de tag valide.');
+      }
+
+      if (_compareVersions(latestVersion, _appBuildVersion) <= 0) {
+        return AppUpdateResult(latestVersion: latestVersion);
+      }
+
+      final asset = _platformAsset(payload['assets']);
+      final releaseUrl =
+          '${payload['html_url'] ?? 'https://github.com/$_githubOwner/$_githubRepo/releases/latest'}';
+      final downloadUrl =
+          '${asset?['browser_download_url'] ?? releaseUrl}'.trim();
+      final assetName = '${asset?['name'] ?? 'GitHub Release'}'.trim();
+      final publishedAt = DateTime.tryParse('${payload['published_at'] ?? ''}');
+
+      return AppUpdateResult(
+        latestVersion: latestVersion,
+        update: AppUpdateInfo(
+          latestVersion: latestVersion,
+          currentVersion: _appBuildVersion,
+          downloadUrl: downloadUrl,
+          releaseUrl: releaseUrl,
+          assetName: assetName.isEmpty ? 'GitHub Release' : assetName,
+          publishedAt: publishedAt,
+        ),
+      );
+    } catch (error) {
+      return AppUpdateResult(error: 'Vérification impossible : $error');
+    }
+  }
+
+  static Map<String, dynamic>? _platformAsset(dynamic assets) {
+    if (assets is! List) return null;
+    final typedAssets =
+        assets.whereType<Map>().map((asset) => asset.cast<String, dynamic>());
+    bool matches(Map<String, dynamic> asset, String extension) {
+      final name = '${asset['name'] ?? ''}'.toLowerCase();
+      return name.endsWith(extension);
+    }
+
+    if (Platform.isAndroid) {
+      return typedAssets.where((asset) => matches(asset, '.apk')).firstOrNull;
+    }
+    if (Platform.isWindows) {
+      return typedAssets.where((asset) {
+            final name = '${asset['name'] ?? ''}'.toLowerCase();
+            return name.endsWith('.exe') && name.contains('setup');
+          }).firstOrNull ??
+          typedAssets.where((asset) => matches(asset, '.exe')).firstOrNull ??
+          typedAssets.where((asset) => matches(asset, '.zip')).firstOrNull;
+    }
+    return null;
+  }
+}
+
+String _cleanVersion(String value) {
+  return value.trim().replaceFirst(RegExp(r'^[vV]'), '').split('+').first;
+}
+
+int _compareVersions(String a, String b) {
+  final left = _versionParts(a);
+  final right = _versionParts(b);
+  final length = max(left.length, right.length);
+  for (var index = 0; index < length; index++) {
+    final leftPart = index < left.length ? left[index] : 0;
+    final rightPart = index < right.length ? right[index] : 0;
+    if (leftPart != rightPart) return leftPart.compareTo(rightPart);
+  }
+  return 0;
+}
+
+List<int> _versionParts(String version) {
+  return _cleanVersion(version)
+      .split('-')
+      .first
+      .split('.')
+      .map((part) => int.tryParse(part.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+      .toList();
 }
 
 class CaisseAirsoftApp extends StatelessWidget {
@@ -847,6 +1008,7 @@ List<Article> defaultArticles() => [
 
 class LocalDatabase {
   Database? _db;
+  String? _userScopeId;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -856,8 +1018,18 @@ class LocalDatabase {
     return _db!;
   }
 
+  bool isScopedTo(String? userId) => _userScopeId == _safeUserScope(userId);
+
+  Future<void> setUserScope(String? userId) async {
+    final nextScope = _safeUserScope(userId);
+    if (_userScopeId == nextScope) return;
+    await _db?.close();
+    _db = null;
+    _userScopeId = nextScope;
+  }
+
   Future<String> _databasePath() async {
-    const fileName = 'frags_addicts_caisse.db';
+    final fileName = _databaseFileName(_userScopeId);
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final supportDirectory = await getApplicationSupportDirectory();
       final directory =
@@ -869,6 +1041,14 @@ class LocalDatabase {
     final directory = Directory(await getDatabasesPath());
     await directory.create(recursive: true);
     return path.join(directory.path, fileName);
+  }
+
+  String? _safeUserScope(String? userId) {
+    final value = userId
+        ?.trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
+        .replaceAll(RegExp(r'^[-._]+|[-._]+$'), '');
+    return value == null || value.isEmpty ? null : value;
   }
 
   Future<void> _create(Database db, int version) async {
@@ -1278,6 +1458,14 @@ class LocalDatabase {
         limit: 1);
     if (rows.isEmpty) return null;
     return DateTime.tryParse('${rows.first['value'] ?? ''}');
+  }
+
+  Future<void> markLocalUpdated() async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.insert('app_settings',
+        {'key': 'local_updated_at', 'value': now, 'updated_at': now},
+        conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> saveSyncMetadata(DateTime syncedAt) async {
@@ -1810,16 +1998,24 @@ class FirebaseSyncResult {
 class FirebaseSyncService {
   FirebaseSyncService();
 
-  DocumentReference<Map<String, dynamic>> get _snapshotRef =>
+  DocumentReference<Map<String, dynamic>> _snapshotRef(User user) =>
       FirebaseFirestore.instance
           .collection('organizations')
           .doc('frags-addicts')
+          .collection('users')
+          .doc(user.uid)
           .collection('snapshots')
-          .doc('caisse-main');
+          .doc(_firebaseSnapshotId);
 
   bool get isAvailable =>
       FirebaseBootstrap.initialized &&
       FirebaseAuth.instance.currentUser != null;
+
+  Future<bool> hasRemoteSnapshot() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!FirebaseBootstrap.initialized || user == null) return false;
+    return (await _snapshotRef(user).get()).exists;
+  }
 
   Future<FirebaseSyncResult> synchronize(LocalDatabase database) async {
     if (!FirebaseBootstrap.initialized) {
@@ -1832,7 +2028,8 @@ class FirebaseSyncService {
           FirebaseSyncAction.noUser, 'Connexion Firebase requise');
     }
     try {
-      final remote = await _snapshotRef.get();
+      final snapshotRef = _snapshotRef(user);
+      final remote = await snapshotRef.get();
       final localUpdatedAt = await database.loadLocalUpdatedAt();
       if (remote.exists) {
         final data = remote.data() ?? const <String, dynamic>{};
@@ -1867,10 +2064,11 @@ class FirebaseSyncService {
 
       final payload = await database.exportAll();
       final updatedAt = localUpdatedAt;
-      await _snapshotRef.set({
+      await snapshotRef.set({
         'payload': _jsonSafe(payload),
         'updatedAt': updatedAt.toIso8601String(),
         'updatedAtMillis': updatedAt.millisecondsSinceEpoch,
+        'ownerUid': user.uid,
         'updatedBy': user.email ?? user.uid,
       });
       await database.saveSyncMetadata(updatedAt);
@@ -1969,31 +2167,8 @@ class AppController extends ChangeNotifier {
   Future<void> load() async {
     _suspendAutoSync = true;
     try {
-      sessions = await _database.loadSessions();
-      var activeSessionId = await _database.loadActiveSessionId();
-      if (sessions.isEmpty) {
-        final created = await _database.createSession('Nouvelle partie');
-        sessions = [created];
-        activeSessionId = created.id;
-      }
-      activeSession =
-          sessions.where((s) => s.id == activeSessionId).firstOrNull ??
-              sessions.first;
-      if (activeSessionId != activeSession!.id) {
-        await _database.setActiveSessionId(activeSession!.id);
-      }
-      helloAssoSettings = await _database.loadHelloAssoSettings();
-      allPlayers = await _database.loadAllPlayers();
-      players = await _database.loadPlayers(activeSession!.id);
-      final storedArticles = await _database.loadArticles();
-      articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
-      sales = await _database.loadSales(activeSession!.id);
-      await refreshSessionSales();
-      cashStart = await _database.loadCash(activeSession!.id, 'start');
-      cashEnd = await _database.loadCash(activeSession!.id, 'end');
-      if (storedArticles.isEmpty) {
-        await persist(markUpdated: false);
-      }
+      await _database.setUserScope(FirebaseAuth.instance.currentUser?.uid);
+      await _loadLocalState();
     } catch (_) {
       articles = defaultArticles();
       syncStatus = 'Chargement local en mode dégradé';
@@ -2003,6 +2178,39 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     if (_syncService.isAvailable) {
       await syncNow();
+    }
+  }
+
+  Future<void> _loadLocalState() async {
+    sessions = await _database.loadSessions();
+    var activeSessionId = await _database.loadActiveSessionId();
+    if (sessions.isEmpty) {
+      final created = await _database.createSession('Nouvelle partie');
+      sessions = [created];
+      activeSessionId = created.id;
+    }
+    activeSession =
+        sessions.where((s) => s.id == activeSessionId).firstOrNull ??
+            sessions.first;
+    if (activeSessionId != activeSession!.id) {
+      await _database.setActiveSessionId(activeSession!.id);
+    }
+    helloAssoSettings = await _database.loadHelloAssoSettings();
+    allPlayers = await _database.loadAllPlayers();
+    players = await _database.loadPlayers(activeSession!.id);
+    final storedArticles = await _database.loadArticles();
+    articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
+    sales = await _database.loadSales(activeSession!.id);
+    await refreshSessionSales();
+    cashStart = await _database.loadCash(activeSession!.id, 'start');
+    cashEnd = await _database.loadCash(activeSession!.id, 'end');
+    cart.clear();
+    donation = 0;
+    selectedPlayerId = null;
+    forceMemberTariff = false;
+    categoryFilter = 'TOUS';
+    if (storedArticles.isEmpty) {
+      await persist(markUpdated: false);
     }
   }
 
@@ -2047,6 +2255,68 @@ class AppController extends ChangeNotifier {
     return result;
   }
 
+  Future<FirebaseSyncResult> connectFirebaseUser() async {
+    if (!FirebaseBootstrap.initialized) {
+      final result = FirebaseSyncResult(FirebaseSyncAction.disabled,
+          FirebaseBootstrap.error ?? 'Firebase non configuré');
+      _applySyncResult(result);
+      notifyListeners();
+      return result;
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      const result = FirebaseSyncResult(
+          FirebaseSyncAction.noUser, 'Connexion Firebase requise');
+      _applySyncResult(result);
+      notifyListeners();
+      return result;
+    }
+
+    syncing = true;
+    syncStatus = 'Chargement du compte Firebase';
+    notifyListeners();
+
+    try {
+      Map<String, dynamic>? seedPayload;
+      if (!_database.isScopedTo(user.uid) &&
+          !(await _database.hasOnlyBootstrapData())) {
+        seedPayload = await _database.exportAll();
+      }
+
+      var remoteExists = true;
+      try {
+        remoteExists = await _syncService.hasRemoteSnapshot();
+      } catch (_) {
+        remoteExists = true;
+      }
+      await _database.setUserScope(user.uid);
+
+      _suspendAutoSync = true;
+      await _loadLocalState();
+      if (seedPayload != null &&
+          !remoteExists &&
+          await _database.hasOnlyBootstrapData()) {
+        await _database.replaceFromExport(seedPayload);
+        await _database.markLocalUpdated();
+        await _loadLocalState();
+      }
+      _suspendAutoSync = false;
+
+      final result = await _syncService.synchronize(_database);
+      _applySyncResult(result);
+      if (result.action == FirebaseSyncAction.pulled) {
+        _suspendAutoSync = true;
+        await _loadLocalState();
+        _suspendAutoSync = false;
+      }
+      return result;
+    } finally {
+      _suspendAutoSync = false;
+      syncing = false;
+      notifyListeners();
+    }
+  }
+
   void _applySyncResult(FirebaseSyncResult result) {
     syncStatus = result.message;
     if (result.syncedAt != null) lastSyncedAt = result.syncedAt;
@@ -2056,6 +2326,14 @@ class AppController extends ChangeNotifier {
     if (FirebaseBootstrap.initialized) {
       await FirebaseAuth.instance.signOut();
     }
+    await _database.setUserScope(null);
+    _suspendAutoSync = true;
+    try {
+      await _loadLocalState();
+    } finally {
+      _suspendAutoSync = false;
+    }
+    lastSyncedAt = null;
     syncStatus = 'Connexion Firebase requise';
     notifyListeners();
   }
@@ -2586,11 +2864,16 @@ class RootShell extends StatefulWidget {
 
 class _RootShellState extends State<RootShell> {
   final controller = AppController();
+  AppUpdateResult? updateResult;
+  bool checkingUpdate = false;
+  bool openingUpdate = false;
+  String? updateActionError;
 
   @override
   void initState() {
     super.initState();
     controller.load();
+    _checkForUpdate();
   }
 
   @override
@@ -2599,11 +2882,52 @@ class _RootShellState extends State<RootShell> {
     super.dispose();
   }
 
+  Future<void> _checkForUpdate() async {
+    if (!kReleaseMode || !AppUpdateService.supportedPlatform) {
+      return;
+    }
+    setState(() {
+      checkingUpdate = true;
+      updateActionError = null;
+    });
+    final result = await AppUpdateService.check();
+    if (!mounted) return;
+    setState(() {
+      updateResult = result;
+      checkingUpdate = false;
+    });
+  }
+
+  Future<void> _openUpdate(AppUpdateInfo update) async {
+    if (openingUpdate) return;
+    setState(() {
+      openingUpdate = true;
+      updateActionError = null;
+    });
+    try {
+      await openExternalUrl(update.downloadUrl);
+    } catch (error) {
+      if (mounted) setState(() => updateActionError = '$error');
+    } finally {
+      if (mounted) setState(() => openingUpdate = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
+        final requiredUpdate = updateResult?.update;
+        if (requiredUpdate != null) {
+          return UpdateRequiredScaffold(
+            update: requiredUpdate,
+            opening: openingUpdate,
+            actionError: updateActionError,
+            onDownload: () => _openUpdate(requiredUpdate),
+            onRetry: _checkForUpdate,
+          );
+        }
         if (controller.loading) {
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
@@ -2616,7 +2940,13 @@ class _RootShellState extends State<RootShell> {
           BilanPage(controller: controller),
           HistoryPage(controller: controller),
           ArticlesPricePage(controller: controller),
-          ConfigPage(controller: controller),
+          ConfigPage(
+            controller: controller,
+            updateResult: updateResult,
+            checkingUpdate: checkingUpdate,
+            onCheckUpdate: _checkForUpdate,
+            onOpenUpdate: _openUpdate,
+          ),
         ];
         return LayoutBuilder(
           builder: (context, constraints) {
@@ -2756,6 +3086,103 @@ class _RootShellState extends State<RootShell> {
       ),
     );
     if (value != null) await controller.setSession(value);
+  }
+}
+
+class UpdateRequiredScaffold extends StatelessWidget {
+  const UpdateRequiredScaffold({
+    required this.update,
+    required this.opening,
+    required this.onDownload,
+    required this.onRetry,
+    this.actionError,
+    super.key,
+  });
+
+  final AppUpdateInfo update;
+  final bool opening;
+  final String? actionError;
+  final VoidCallback onDownload;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: TacticalCard(
+                borderColor: AppColors.warn,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Icon(Icons.system_update,
+                        color: AppColors.accent, size: 42),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Mise à jour obligatoire',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Version installée : ${update.currentVersion}\n'
+                      'Version disponible : ${update.latestVersion}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    if (update.publishedAt != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Publiée le ${dateLabel(update.publishedAt!)} à ${timeLabel(update.publishedAt!)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: opening ? null : onDownload,
+                      icon: opening
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.download),
+                      label: Text(
+                        Platform.isAndroid
+                            ? 'Télécharger l’APK'
+                            : 'Télécharger l’installateur',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: opening ? null : onRetry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Re-vérifier'),
+                    ),
+                    if (actionError != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        actionError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.danger),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -3543,31 +3970,30 @@ class CashAnalysisPage extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1100;
-        final startCard = SizedBox(
-            height: wide ? 620 : 540,
-            child: CashCountCard(
-                title: 'Fond début',
-                kind: 'start',
-                total: start,
-                controller: controller));
-        final endCard = SizedBox(
-            height: wide ? 620 : 540,
-            child: CashCountCard(
-                title: 'Fond fin',
-                kind: 'end',
-                total: end,
-                controller: controller));
+        final cashTabs = SizedBox(
+          height: wide ? 620 : 560,
+          child: CashCountTabs(
+            startTotal: start,
+            endTotal: end,
+            controller: controller,
+          ),
+        );
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            const SectionTitle('Caisse espèces'),
+            SectionTitle(
+              'Caisse espèces',
+              trailing: FilledButton.tonalIcon(
+                onPressed: () => exportCashPdf(context, controller),
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('PDF'),
+              ),
+            ),
             if (wide)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(child: startCard),
-                  const SizedBox(width: 10),
-                  Expanded(child: endCard),
+                  Expanded(child: cashTabs),
                   const SizedBox(width: 10),
                   SizedBox(width: 330, child: analysisCard),
                 ],
@@ -3575,13 +4001,107 @@ class CashAnalysisPage extends StatelessWidget {
             else ...[
               analysisCard,
               const SizedBox(height: 10),
-              startCard,
-              const SizedBox(height: 10),
-              endCard,
+              cashTabs,
             ],
           ],
         );
       },
+    );
+  }
+}
+
+class CashCountTabs extends StatelessWidget {
+  const CashCountTabs(
+      {required this.startTotal,
+      required this.endTotal,
+      required this.controller,
+      super.key});
+
+  final double startTotal;
+  final double endTotal;
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: TabBar(
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelColor: AppColors.text,
+              unselectedLabelColor: AppColors.muted,
+              indicator: const BoxDecoration(color: AppColors.surface2),
+              tabs: [
+                Tab(
+                  child: _CashTabLabel(
+                    title: 'Fond début',
+                    total: startTotal,
+                  ),
+                ),
+                Tab(
+                  child: _CashTabLabel(
+                    title: 'Fond fin',
+                    total: endTotal,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: TabBarView(
+              children: [
+                CashCountCard(
+                    title: 'Fond début',
+                    kind: 'start',
+                    total: startTotal,
+                    controller: controller,
+                    showHeader: false),
+                CashCountCard(
+                    title: 'Fond fin',
+                    kind: 'end',
+                    total: endTotal,
+                    controller: controller,
+                    showHeader: false),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CashTabLabel extends StatelessWidget {
+  const _CashTabLabel({required this.title, required this.total});
+
+  final String title;
+  final double total;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(width: 8),
+          Text(money(total),
+              style: const TextStyle(
+                  color: AppColors.accent, fontWeight: FontWeight.w900)),
+        ],
+      ),
     );
   }
 }
@@ -3624,12 +4144,14 @@ class CashCountCard extends StatelessWidget {
       required this.kind,
       required this.total,
       required this.controller,
+      this.showHeader = true,
       super.key});
 
   final String title;
   final String kind;
   final double total;
   final AppController controller;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -3638,20 +4160,22 @@ class CashCountCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Text(title.toUpperCase(),
-                  style: const TextStyle(
-                      color: AppColors.muted,
-                      letterSpacing: 2,
-                      fontWeight: FontWeight.w800)),
-              const Spacer(),
-              Text(money(total),
-                  style: const TextStyle(
-                      color: AppColors.accent, fontWeight: FontWeight.w900)),
-            ],
-          ),
-          const SizedBox(height: 8),
+          if (showHeader) ...[
+            Row(
+              children: [
+                Text(title.toUpperCase(),
+                    style: const TextStyle(
+                        color: AppColors.muted,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w800)),
+                const Spacer(),
+                Text(money(total),
+                    style: const TextStyle(
+                        color: AppColors.accent, fontWeight: FontWeight.w900)),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -3986,9 +4510,20 @@ class ArticlesPricePage extends StatelessWidget {
 }
 
 class ConfigPage extends StatelessWidget {
-  const ConfigPage({required this.controller, super.key});
+  const ConfigPage({
+    required this.controller,
+    required this.updateResult,
+    required this.checkingUpdate,
+    required this.onCheckUpdate,
+    required this.onOpenUpdate,
+    super.key,
+  });
 
   final AppController controller;
+  final AppUpdateResult? updateResult;
+  final bool checkingUpdate;
+  final VoidCallback onCheckUpdate;
+  final Future<void> Function(AppUpdateInfo update) onOpenUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -3996,6 +4531,37 @@ class ConfigPage extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       children: [
         const SectionTitle('Configuration'),
+        const SectionTitle('Mises à jour'),
+        ConfigActionZone(
+          borderColor: updateResult?.requiresUpdate == true
+              ? AppColors.warn
+              : AppColors.accent2,
+          title: _updateStatusTitle(),
+          description: _updateStatusDescription(),
+          action: Wrap(
+            spacing: 8,
+            children: [
+              if (updateResult?.update != null)
+                FilledButton.tonalIcon(
+                  onPressed: () => onOpenUpdate(updateResult!.update!),
+                  icon: const Icon(Icons.download),
+                  label: Text(
+                    Platform.isAndroid ? 'Télécharger APK' : 'Télécharger',
+                  ),
+                ),
+              OutlinedButton.icon(
+                onPressed: checkingUpdate ? null : onCheckUpdate,
+                icon: checkingUpdate
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh),
+                label: const Text('Vérifier'),
+              ),
+            ],
+          ),
+        ),
         const SectionTitle('Firebase'),
         ConfigActionZone(
           borderColor:
@@ -4006,7 +4572,7 @@ class ConfigPage extends StatelessWidget {
           description: controller.firebaseAvailable
               ? '${controller.firebaseUserLabel} · ${controller.syncStatus}${controller.lastSyncedAt == null ? '' : ' · ${dateLabel(controller.lastSyncedAt!)} ${timeLabel(controller.lastSyncedAt!)}'}'
               : (FirebaseBootstrap.error ??
-                  'Connecte-toi avec un compte Firebase pour synchroniser Android et Windows.'),
+                  'Connecte-toi avec un compte Firebase pour charger la caisse liée à cet utilisateur.'),
           action: Wrap(
             spacing: 8,
             children: [
@@ -4180,6 +4746,35 @@ class ConfigPage extends StatelessWidget {
       ],
     );
   }
+
+  String _updateStatusTitle() {
+    if (!kReleaseMode) return 'Mode développement';
+    if (!AppUpdateService.supportedPlatform) return 'Plateforme non suivie';
+    if (checkingUpdate && updateResult == null) return 'Vérification en cours';
+    if (updateResult?.requiresUpdate == true) return 'Mise à jour disponible';
+    if (updateResult?.error != null) return 'Vérification impossible';
+    return 'Application à jour';
+  }
+
+  String _updateStatusDescription() {
+    if (!kReleaseMode) {
+      return 'Le contrôle forcé est actif uniquement dans les builds release. Version build : $_appBuildVersion.';
+    }
+    if (!AppUpdateService.supportedPlatform) {
+      return 'Le contrôle GitHub est prévu pour Android et Windows.';
+    }
+    final update = updateResult?.update;
+    if (update != null) {
+      return 'Version $_appBuildVersion installée, version ${update.latestVersion} publiée sur GitHub. Fichier : ${update.assetName}.';
+    }
+    if (updateResult?.error != null) {
+      return '${updateResult!.error} Version build : $_appBuildVersion.';
+    }
+    final latest = updateResult?.latestVersion;
+    return latest == null
+        ? 'Version build : $_appBuildVersion.'
+        : 'Version build : $_appBuildVersion. Dernière version GitHub : $latest.';
+  }
 }
 
 class FirebaseLoginPanel extends StatefulWidget {
@@ -4216,7 +4811,7 @@ class _FirebaseLoginPanelState extends State<FirebaseLoginPanel> {
         email: emailController.text.trim(),
         password: passwordController.text,
       );
-      final result = await widget.controller.syncNow();
+      final result = await widget.controller.connectFirebaseUser();
       if (mounted) snack(context, result.message);
     } on FirebaseAuthException catch (exception) {
       if (mounted) setState(() => error = exception.message ?? exception.code);
@@ -4379,6 +4974,19 @@ class HistoryPage extends StatelessWidget {
                             label: const Text('Ouvrir'),
                           ),
                     children: [
+                      if (sessionSales.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  exportBilanPdf(context, controller, session),
+                              icon: const Icon(Icons.picture_as_pdf),
+                              label: const Text('Bilan PDF'),
+                            ),
+                          ),
+                        ),
                       if (session.helloassoEventUrl.isNotEmpty)
                         ListTile(
                           dense: true,
@@ -5356,6 +5964,396 @@ List<String> changeBreakdown(double change) {
   return chips;
 }
 
+Future<void> exportBilanPdf(BuildContext context, AppController controller,
+    SessionRecord session) async {
+  try {
+    final sales = controller.salesForSession(session.id);
+    if (sales.isEmpty) {
+      snack(context, 'Aucune vente à exporter pour cette session');
+      return;
+    }
+
+    final bytes = await _buildBilanPdf(session, sales);
+    final now = DateTime.now();
+    final fileName =
+        'bilan_airsoft_${_pdfFileDate(session.eventDate)}_${_pdfCompactTimestamp(now)}.pdf';
+    final savedFile = await _savePdfFile(fileName, bytes);
+    final name = savedFile['name'] ?? fileName;
+    if (context.mounted) {
+      snack(context, 'PDF bilan enregistré dans Downloads : $name');
+    }
+  } on PlatformException catch (error) {
+    if (context.mounted) {
+      snack(
+          context, 'Export bilan impossible : ${error.message ?? error.code}');
+    }
+  } catch (error) {
+    if (context.mounted) snack(context, 'Export bilan impossible : $error');
+  }
+}
+
+Future<Uint8List> _buildBilanPdf(
+    SessionRecord session, List<Sale> sales) async {
+  final document = pw.Document();
+  final paymentTotals = _bilanPaymentTotals(sales);
+  final total =
+      sales.fold<double>(0, (runningTotal, sale) => runningTotal + sale.total);
+  final paymentCounts = _bilanPaymentCounts(sales);
+  final stockRows = _bilanStockRows(sales);
+  final playerRows = _bilanPlayerRows(sales);
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      footer: (context) => _pdfFooter(
+          session.eventDate, context.pageNumber, context.pagesCount, ''),
+      build: (context) => [
+        _pdfBilanHeader(session),
+        pw.SizedBox(height: 16),
+        _pdfSectionHeader('BILAN DE LA JOURNEE'),
+        pw.Row(
+          children: [
+            _pdfBilanMetric(
+              'ESPECES',
+              _pdfBilanMoney(paymentTotals['ESP'] ?? 0),
+              '${paymentCounts['ESP'] ?? 0} transaction(s)',
+            ),
+            pw.SizedBox(width: 6),
+            _pdfBilanMetric(
+              'PAYPAL',
+              _pdfBilanMoney(paymentTotals['PayPal'] ?? 0),
+              '${paymentCounts['PayPal'] ?? 0} transaction(s)',
+            ),
+            pw.SizedBox(width: 6),
+            _pdfBilanMetric(
+              'SUMUP',
+              _pdfBilanMoney(paymentTotals['SumUp'] ?? 0),
+              '${paymentCounts['SumUp'] ?? 0} transaction(s)',
+            ),
+            pw.SizedBox(width: 6),
+            _pdfBilanMetric(
+              'TOTAL - ${sales.length} vente(s)',
+              _pdfBilanMoney(total),
+              '',
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 26),
+        _pdfSectionHeader('STOCK VENDU'),
+        if (stockRows.isEmpty)
+          pw.Text('Aucun article vendu',
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700))
+        else
+          pw.Table(
+            border: pw.TableBorder(
+              horizontalInside:
+                  const pw.BorderSide(color: PdfColors.grey600, width: 0.35),
+              bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+            ),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(2.7),
+              1: pw.FlexColumnWidth(0.7),
+              2: pw.FlexColumnWidth(1.3),
+              3: pw.FlexColumnWidth(1.3),
+              4: pw.FlexColumnWidth(1.3),
+              5: pw.FlexColumnWidth(1.3),
+            },
+            children: [
+              _pdfBilanTableRow(
+                  ['ARTICLE', 'QTE', 'ESP', 'PAYPAL', 'SUMUP', 'TOTAL'],
+                  header: true, alignRightFrom: 1),
+              for (var i = 0; i < stockRows.length; i++)
+                _pdfBilanTableRow(
+                  [
+                    stockRows[i].name,
+                    '${stockRows[i].quantity}',
+                    _pdfBilanMoneyOrDash(stockRows[i].cashTotal),
+                    _pdfBilanMoneyOrDash(stockRows[i].paypalTotal),
+                    _pdfBilanMoneyOrDash(stockRows[i].sumupTotal),
+                    _pdfBilanMoneyOrDash(stockRows[i].total),
+                  ],
+                  shaded: i.isEven,
+                  alignRightFrom: 1,
+                ),
+            ],
+          ),
+        pw.SizedBox(height: 26),
+        _pdfSectionHeader('PAR JOUEUR'),
+        pw.Table(
+          border: pw.TableBorder(
+            horizontalInside:
+                const pw.BorderSide(color: PdfColors.grey600, width: 0.35),
+            bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+          ),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(2.5),
+            1: pw.FlexColumnWidth(0.7),
+            2: pw.FlexColumnWidth(0.4),
+            3: pw.FlexColumnWidth(1.2),
+            4: pw.FlexColumnWidth(1.2),
+            5: pw.FlexColumnWidth(1.2),
+            6: pw.FlexColumnWidth(0.8),
+            7: pw.FlexColumnWidth(1.1),
+          },
+          children: [
+            _pdfBilanTableRow([
+              'JOUEUR',
+              'TYPE',
+              'N',
+              'ESP',
+              'PAYPAL',
+              'SUMUP',
+              'DONS',
+              'TOTAL'
+            ], header: true, alignRightFrom: 2),
+            for (var i = 0; i < playerRows.length; i++)
+              _pdfBilanTableRow(
+                [
+                  playerRows[i].playerName,
+                  _pdfPlayerType(playerRows[i].playerType),
+                  '${playerRows[i].saleCount}',
+                  _pdfBilanNumberOrDash(playerRows[i].cashTotal),
+                  _pdfBilanNumberOrDash(playerRows[i].paypalTotal),
+                  _pdfBilanNumberOrDash(playerRows[i].sumupTotal),
+                  _pdfBilanNumberOrDash(playerRows[i].donationTotal),
+                  _pdfBilanNumberOrDash(playerRows[i].total),
+                ],
+                shaded: i.isEven,
+                alignRightFrom: 2,
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  return document.save();
+}
+
+pw.Widget _pdfBilanHeader(SessionRecord session) {
+  return pw.Column(
+    children: [
+      pw.Center(
+        child: pw.Text(
+          'CAISSE AIRSOFT',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+      ),
+      pw.SizedBox(height: 5),
+      pw.Center(
+        child: pw.Text(
+          '${dateLabel(session.eventDate)} - ${session.name}',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+        ),
+      ),
+      pw.Divider(color: PdfColors.grey500),
+    ],
+  );
+}
+
+pw.Widget _pdfBilanMetric(String label, String value, String caption) {
+  return pw.Expanded(
+    child: pw.Container(
+      height: 62,
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey500, width: 0.6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label,
+              style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700)),
+          pw.Text(value,
+              style:
+                  pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+          pw.Text(caption,
+              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700)),
+        ],
+      ),
+    ),
+  );
+}
+
+pw.TableRow _pdfBilanTableRow(List<String> cells,
+    {bool header = false, bool shaded = false, int alignRightFrom = 0}) {
+  return pw.TableRow(
+    decoration: pw.BoxDecoration(
+      color: header
+          ? PdfColors.white
+          : shaded
+              ? PdfColors.grey100
+              : PdfColors.white,
+    ),
+    children: [
+      for (var i = 0; i < cells.length; i++)
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+          child: pw.Text(
+            cells[i],
+            maxLines: i == 0 ? 2 : 1,
+            overflow: pw.TextOverflow.clip,
+            textAlign:
+                i >= alignRightFrom ? pw.TextAlign.right : pw.TextAlign.left,
+            style: pw.TextStyle(
+              fontSize: header ? 7.5 : 7.5,
+              fontWeight: header ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+Map<String, double> _bilanPaymentTotals(List<Sale> sales) {
+  final totals = {'ESP': 0.0, 'PayPal': 0.0, 'SumUp': 0.0};
+  for (final sale in sales) {
+    totals[sale.payment] = (totals[sale.payment] ?? 0) + sale.total;
+  }
+  return totals;
+}
+
+Map<String, int> _bilanPaymentCounts(List<Sale> sales) {
+  final counts = {'ESP': 0, 'PayPal': 0, 'SumUp': 0};
+  for (final sale in sales) {
+    counts[sale.payment] = (counts[sale.payment] ?? 0) + 1;
+  }
+  return counts;
+}
+
+List<
+    ({
+      String name,
+      int quantity,
+      double cashTotal,
+      double paypalTotal,
+      double sumupTotal,
+      double total
+    })> _bilanStockRows(List<Sale> sales) {
+  final grouped = <String,
+      ({
+    String name,
+    int quantity,
+    double cashTotal,
+    double paypalTotal,
+    double sumupTotal,
+    double total
+  })>{};
+  var donationCount = 0;
+  var donationCash = 0.0;
+  var donationPaypal = 0.0;
+  var donationSumup = 0.0;
+
+  for (final sale in sales) {
+    for (final item in sale.items) {
+      final current = grouped[item.name] ??
+          (
+            name: item.name,
+            quantity: 0,
+            cashTotal: 0.0,
+            paypalTotal: 0.0,
+            sumupTotal: 0.0,
+            total: 0.0,
+          );
+      final lineTotal = item.price * item.quantity;
+      grouped[item.name] = (
+        name: current.name,
+        quantity: current.quantity + item.quantity,
+        cashTotal: current.cashTotal + (sale.payment == 'ESP' ? lineTotal : 0),
+        paypalTotal:
+            current.paypalTotal + (sale.payment == 'PayPal' ? lineTotal : 0),
+        sumupTotal:
+            current.sumupTotal + (sale.payment == 'SumUp' ? lineTotal : 0),
+        total: current.total + lineTotal,
+      );
+    }
+    if (sale.donation > 0) {
+      donationCount += 1;
+      donationCash += sale.payment == 'ESP' ? sale.donation : 0;
+      donationPaypal += sale.payment == 'PayPal' ? sale.donation : 0;
+      donationSumup += sale.payment == 'SumUp' ? sale.donation : 0;
+    }
+  }
+
+  final rows = grouped.values.toList();
+  final donationTotal = donationCash + donationPaypal + donationSumup;
+  if (donationTotal > 0) {
+    rows.add((
+      name: 'Dons',
+      quantity: donationCount,
+      cashTotal: donationCash,
+      paypalTotal: donationPaypal,
+      sumupTotal: donationSumup,
+      total: donationTotal,
+    ));
+  }
+  rows.sort((a, b) => b.total.compareTo(a.total));
+  return rows;
+}
+
+List<
+    ({
+      String playerName,
+      String playerType,
+      int saleCount,
+      double cashTotal,
+      double paypalTotal,
+      double sumupTotal,
+      double donationTotal,
+      double total
+    })> _bilanPlayerRows(List<Sale> sales) {
+  final grouped = <String,
+      ({
+    String playerName,
+    String playerType,
+    int saleCount,
+    double cashTotal,
+    double paypalTotal,
+    double sumupTotal,
+    double donationTotal,
+    double total
+  })>{};
+  for (final sale in sales) {
+    final key = sale.playerId.isEmpty ? sale.playerName : sale.playerId;
+    final current = grouped[key] ??
+        (
+          playerName: sale.playerName,
+          playerType: sale.playerType,
+          saleCount: 0,
+          cashTotal: 0.0,
+          paypalTotal: 0.0,
+          sumupTotal: 0.0,
+          donationTotal: 0.0,
+          total: 0.0,
+        );
+    grouped[key] = (
+      playerName: current.playerName,
+      playerType: current.playerType,
+      saleCount: current.saleCount + 1,
+      cashTotal: current.cashTotal + (sale.payment == 'ESP' ? sale.total : 0),
+      paypalTotal:
+          current.paypalTotal + (sale.payment == 'PayPal' ? sale.total : 0),
+      sumupTotal:
+          current.sumupTotal + (sale.payment == 'SumUp' ? sale.total : 0),
+      donationTotal: current.donationTotal + sale.donation,
+      total: current.total + sale.total,
+    );
+  }
+  final rows = grouped.values.toList()
+    ..sort((a, b) => b.total.compareTo(a.total));
+  return rows;
+}
+
+String _pdfBilanMoney(num value) => '${value.toStringAsFixed(2)} EUR';
+
+String _pdfBilanMoneyOrDash(num value) =>
+    value.abs() < 0.005 ? '-' : _pdfBilanMoney(value);
+
+String _pdfBilanNumberOrDash(num value) =>
+    value.abs() < 0.005 ? '-' : value.toStringAsFixed(2);
+
 class PlayerPdfRow {
   const PlayerPdfRow({
     required this.playerName,
@@ -5731,6 +6729,255 @@ String _pdfSaleTariff(Sale sale) {
   return sale.tariff == 'adherent' || sale.playerType == 'membre'
       ? 'ADH'
       : 'PUB';
+}
+
+Future<void> exportCashPdf(
+    BuildContext context, AppController controller) async {
+  try {
+    final bytes = await _buildCashPdf(controller);
+    final date = DateTime.now();
+    final fileName =
+        'analyse_caisse_${_pdfFileDate(date)}_${_pdfCompactTimestamp(date)}.pdf';
+    final savedFile = await _savePdfFile(fileName, bytes);
+    final name = savedFile['name'] ?? fileName;
+    if (context.mounted) {
+      snack(context, 'PDF caisse enregistré dans Downloads : $name');
+    }
+  } on PlatformException catch (error) {
+    if (context.mounted) {
+      snack(
+          context, 'Export caisse impossible : ${error.message ?? error.code}');
+    }
+  } catch (error) {
+    if (context.mounted) {
+      snack(context, 'Export caisse impossible : $error');
+    }
+  }
+}
+
+Future<Uint8List> _buildCashPdf(AppController controller) async {
+  final document = pw.Document();
+  final date = DateTime.now();
+  final start = controller.cashTotal('start');
+  final end = controller.cashTotal('end');
+  final cashSales = controller.paymentTotals()['ESP'] ?? 0;
+  final theoretical = start + cashSales;
+  final gap = end - theoretical;
+  final gapOk = gap.abs() < .01;
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 40, vertical: 34),
+      footer: (context) => _pdfCashFooter(
+        date,
+        context.pageNumber,
+        context.pagesCount,
+      ),
+      build: (context) => [
+        _pdfCashHeader(date, controller),
+        pw.SizedBox(height: 16),
+        _pdfSectionHeader('ANALYSE CAISSE ESPECES'),
+        pw.Row(
+          children: [
+            _pdfMetric('FOND DEBUT', _pdfCashMoney(start)),
+            pw.SizedBox(width: 6),
+            _pdfMetric('+ VENTES ESP', _pdfCashMoney(cashSales)),
+            pw.SizedBox(width: 6),
+            _pdfMetric('= THEORIQUE', _pdfCashMoney(theoretical)),
+            pw.SizedBox(width: 6),
+            _pdfMetric('FOND FIN REEL', _pdfCashMoney(end)),
+          ],
+        ),
+        pw.SizedBox(height: 12),
+        _pdfCashGapBox(gap, gapOk),
+        pw.SizedBox(height: 24),
+        _pdfCashCountSection('FOND DEBUT', start, controller.cashStart),
+        pw.SizedBox(height: 22),
+        _pdfCashCountSection('FOND FIN', end, controller.cashEnd),
+      ],
+    ),
+  );
+
+  return document.save();
+}
+
+pw.Widget _pdfCashHeader(DateTime date, AppController controller) {
+  final session = controller.session.isEmpty ? 'Partie' : controller.session;
+  return pw.Column(
+    children: [
+      pw.Center(
+        child: pw.Text(
+          'CAISSE AIRSOFT',
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+        ),
+      ),
+      pw.SizedBox(height: 5),
+      pw.Center(
+        child: pw.Text(
+          '${dateLabel(date)} - $session',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+        ),
+      ),
+      pw.Divider(color: PdfColors.grey500),
+    ],
+  );
+}
+
+pw.Widget _pdfCashGapBox(double gap, bool gapOk) {
+  return pw.Container(
+    width: double.infinity,
+    padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: pw.BoxDecoration(
+      border: pw.Border.all(color: PdfColors.grey600, width: 0.9),
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'ECART',
+          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Text(
+          '${_pdfCashMoney(gap, decimalComma: true)} - ${gapOk ? 'OK' : 'A CONTROLER'}',
+          style: pw.TextStyle(
+            fontSize: 14,
+            fontWeight: pw.FontWeight.bold,
+            color: gapOk ? PdfColors.black : PdfColors.red700,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+pw.Widget _pdfCashCountSection(
+    String title, double total, Map<String, int> cashMap) {
+  final rows = _cashPdfRows(cashMap);
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.start,
+    children: [
+      _pdfSectionHeader('$title - ${_pdfCashMoney(total)}'),
+      if (rows.isEmpty)
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 8),
+          child: pw.Text(
+            'Aucun comptage saisi',
+            style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+          ),
+        )
+      else
+        pw.Table(
+          border: pw.TableBorder(
+            horizontalInside:
+                const pw.BorderSide(color: PdfColors.grey600, width: 0.35),
+            bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.5),
+          ),
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1.7),
+            1: pw.FlexColumnWidth(1.1),
+            2: pw.FlexColumnWidth(0.75),
+            3: pw.FlexColumnWidth(2.1),
+          },
+          children: [
+            _pdfCashTableRow(
+              ['COUPURE', 'TYPE', 'NB', 'SOUS-TOTAL'],
+              header: true,
+            ),
+            for (var i = 0; i < rows.length; i++)
+              _pdfCashTableRow(
+                [
+                  rows[i].label,
+                  rows[i].type,
+                  '${rows[i].quantity}',
+                  _pdfCashMoney(rows[i].subtotal),
+                ],
+                shaded: i.isEven,
+              ),
+          ],
+        ),
+    ],
+  );
+}
+
+List<({String label, String type, int quantity, double subtotal})> _cashPdfRows(
+    Map<String, int> cashMap) {
+  return [
+    for (final value in denominations)
+      if ((cashMap[value.toString()] ?? 0) > 0)
+        (
+          label: _cashDenominationLabel(value),
+          type: value >= 5 ? 'Billet' : 'Piece',
+          quantity: cashMap[value.toString()]!,
+          subtotal: value * cashMap[value.toString()]!,
+        ),
+  ];
+}
+
+pw.TableRow _pdfCashTableRow(List<String> cells,
+    {bool header = false, bool shaded = false}) {
+  return pw.TableRow(
+    decoration: pw.BoxDecoration(
+      color: header
+          ? PdfColors.white
+          : shaded
+              ? PdfColors.grey100
+              : PdfColors.white,
+    ),
+    children: [
+      for (var i = 0; i < cells.length; i++)
+        pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+          child: pw.Text(
+            cells[i],
+            maxLines: 1,
+            overflow: pw.TextOverflow.clip,
+            textAlign: i >= 2 ? pw.TextAlign.right : pw.TextAlign.left,
+            style: pw.TextStyle(
+              fontSize: header ? 7.5 : 7.5,
+              fontWeight: header ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+pw.Widget _pdfCashFooter(DateTime date, int pageNumber, int pageCount) {
+  return pw.Align(
+    alignment: pw.Alignment.center,
+    child: pw.Text(
+      'Caisse Airsoft - ${dateLabel(date)} - Page $pageNumber/$pageCount',
+      style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
+    ),
+  );
+}
+
+String _cashDenominationLabel(double value) {
+  if (value >= 1) return '${value.round()} EUR';
+  return '${(value * 100).round()} cts';
+}
+
+String _pdfCashMoney(num value, {bool decimalComma = false}) {
+  final amount = value.toStringAsFixed(2);
+  return '${decimalComma ? amount.replaceAll('.', ',') : amount} EUR';
+}
+
+String _pdfFileDate(DateTime date) {
+  final day = date.day.toString().padLeft(2, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  return '$day-$month-${date.year}';
+}
+
+String _pdfCompactTimestamp(DateTime date) {
+  final year = (date.year % 100).toString().padLeft(2, '0');
+  final month = date.month.toString().padLeft(2, '0');
+  final day = date.day.toString().padLeft(2, '0');
+  final hour = date.hour.toString().padLeft(2, '0');
+  final minute = date.minute.toString().padLeft(2, '0');
+  final second = date.second.toString().padLeft(2, '0');
+  return '$year$month${day}_$hour$minute$second';
 }
 
 Future<void> exportKpiPdf(
@@ -6298,16 +7545,15 @@ Future<void> copyBackup(BuildContext context, AppController controller) async {
     final timestamp =
         DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
     final fileName = 'frags-addicts-export-$timestamp.json';
-    final savedFile = await _fileImportChannel.invokeMapMethod<String, String>(
-      'saveJsonBackup',
-      {'name': fileName, 'content': content},
-    );
-    final name = savedFile?['name'] ?? fileName;
-    if (context.mounted)
+    final savedFile = await _saveJsonBackupFile(fileName, content);
+    final name = savedFile['name'] ?? fileName;
+    if (context.mounted) {
       snack(context, 'Export enregistré dans Downloads : $name');
+    }
   } on PlatformException catch (error) {
-    if (context.mounted)
+    if (context.mounted) {
       snack(context, 'Export impossible : ${error.message ?? error.code}');
+    }
   } catch (error) {
     if (context.mounted) snack(context, 'Export impossible : $error');
   }
@@ -6315,14 +7561,69 @@ Future<void> copyBackup(BuildContext context, AppController controller) async {
 
 const _fileImportChannel = MethodChannel('frags_addicts/file_import');
 
+Future<Map<String, String>> _saveJsonBackupFile(
+    String fileName, String content) async {
+  if (Platform.isAndroid) {
+    final savedFile = await _fileImportChannel.invokeMapMethod<String, String>(
+      'saveJsonBackup',
+      {'name': fileName, 'content': content},
+    );
+    return savedFile ?? {'name': fileName};
+  }
+
+  final downloads = await getDownloadsDirectory();
+  final directory = downloads ?? Directory.current;
+  final safeName = _safeJsonFileName(fileName);
+  final file = File(path.join(directory.path, safeName));
+  await file.writeAsString(content, encoding: utf8, flush: true);
+  return {'name': safeName, 'path': file.path};
+}
+
+String _safeJsonFileName(String name) {
+  final baseName = name
+      .trim()
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
+      .replaceAll(RegExp(r'^[-._]+|[-._]+$'), '');
+  final safe = baseName.isEmpty ? 'frags-addicts-export.json' : baseName;
+  return safe.toLowerCase().endsWith('.json') ? safe : '$safe.json';
+}
+
+Future<void> openExternalUrl(String url) async {
+  final uri = Uri.tryParse(url);
+  if (uri == null || !uri.hasScheme) {
+    throw const FormatException('Lien de mise à jour invalide');
+  }
+
+  if (Platform.isAndroid) {
+    await _fileImportChannel.invokeMethod('openUrl', {'url': url});
+    return;
+  }
+
+  if (Platform.isWindows) {
+    await Process.run('cmd', ['/c', 'start', '', url]);
+    return;
+  }
+
+  if (Platform.isMacOS) {
+    await Process.run('open', [url]);
+    return;
+  }
+
+  if (Platform.isLinux) {
+    await Process.run('xdg-open', [url]);
+    return;
+  }
+
+  throw UnsupportedError('Ouverture du lien non supportée');
+}
+
 Future<void> importBackupFromFile(
     BuildContext context, AppController controller) async {
   try {
-    final file = await _fileImportChannel
-        .invokeMapMethod<String, String>('pickJsonBackup');
+    final file = await _pickJsonBackupFile();
     if (file == null) return;
 
-    final content = file['content'];
+    final content = _stripUtf8Bom(file['content']);
     final name = file['name'] ?? 'sauvegarde.json';
     if (content == null || content.trim().isEmpty) {
       throw const FormatException('Fichier vide ou illisible');
@@ -6339,11 +7640,76 @@ Future<void> importBackupFromFile(
     await controller.importBackup(payload);
     if (context.mounted) snack(context, 'Sauvegarde restaurée');
   } on PlatformException catch (error) {
-    if (context.mounted)
+    if (context.mounted) {
       snack(context, 'Import impossible : ${error.message ?? error.code}');
+    }
   } catch (error) {
     if (context.mounted) snack(context, 'Import impossible : $error');
   }
+}
+
+Future<Map<String, String>?> _pickJsonBackupFile() async {
+  if (Platform.isAndroid) {
+    return _fileImportChannel.invokeMapMethod<String, String>('pickJsonBackup');
+  }
+
+  if (Platform.isWindows) {
+    return _pickJsonBackupFileWindows();
+  }
+
+  throw UnsupportedError(
+      'Import de sauvegarde non supporté sur cette plateforme');
+}
+
+Future<Map<String, String>?> _pickJsonBackupFileWindows() async {
+  const script = r'''
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'Choisir une sauvegarde Frags Addicts'
+$dialog.Filter = 'Sauvegardes JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'
+$dialog.Multiselect = $false
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.FileName
+}
+''';
+
+  final result = await Process.run(
+    'powershell.exe',
+    ['-NoProfile', '-Sta', '-ExecutionPolicy', 'Bypass', '-Command', script],
+    stdoutEncoding: utf8,
+    stderrEncoding: utf8,
+  );
+  if (result.exitCode != 0) {
+    final message = '${result.stderr}'.trim();
+    throw PlatformException(
+      code: 'picker_unavailable',
+      message: message.isEmpty
+          ? 'Impossible d\'ouvrir le sélecteur de fichier.'
+          : message,
+    );
+  }
+
+  final selectedPath = _lastNonEmptyLine('${result.stdout}');
+  if (selectedPath == null) return null;
+
+  final file = File(selectedPath);
+  final content = await file.readAsString(encoding: utf8);
+  return {'name': path.basename(file.path), 'content': content};
+}
+
+String? _stripUtf8Bom(String? content) {
+  if (content == null) return null;
+  return content.startsWith('\uFEFF') ? content.substring(1) : content;
+}
+
+String? _lastNonEmptyLine(String value) {
+  String? last;
+  for (final line in value.split(RegExp(r'\r?\n'))) {
+    final trimmed = line.trim();
+    if (trimmed.isNotEmpty) last = trimmed;
+  }
+  return last;
 }
 
 Future<bool> confirm(BuildContext context, String message) async {
