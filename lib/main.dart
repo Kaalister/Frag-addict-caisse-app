@@ -384,6 +384,18 @@ String stableCategoryId(String category) {
   return normalized.isEmpty ? 'divers' : normalized;
 }
 
+String normalizedCategoryName(String category) => category.trim().toUpperCase();
+
+List<String> defaultArticleCategories() => [
+      'BOISSONS',
+      'SNACKING',
+      'MUNITIONS',
+      'REPAS',
+      'GOODIES',
+      'LOCATION',
+      'DIVERS',
+    ];
+
 class SessionRecord {
   SessionRecord({
     required this.id,
@@ -1650,6 +1662,13 @@ class LocalDatabase {
         .toList();
   }
 
+  Future<List<String>> loadArticleCategories() async {
+    final db = await database;
+    final rows = await db.query('article_categories',
+        columns: ['name'], orderBy: 'sort_order ASC, name COLLATE NOCASE ASC');
+    return rows.map((row) => '${row['name']}').toList();
+  }
+
   Future<List<Sale>> loadSales(String sessionId) async {
     final db = await database;
     final rows = await db.query('sales',
@@ -1781,7 +1800,17 @@ class LocalDatabase {
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
 
-      await txn.update('articles', {'is_active': 0, 'updated_at': now});
+      await txn.update(
+          'articles', {'category_id': null, 'is_active': 0, 'updated_at': now});
+      await txn.delete('article_categories');
+      for (var i = 0; i < state.articleCategories.length; i++) {
+        final category = state.articleCategories[i];
+        await txn.insert('article_categories', {
+          'id': stableCategoryId(category),
+          'name': category,
+          'sort_order': i,
+        });
+      }
       for (var i = 0; i < state.articles.length; i++) {
         final article = state.articles[i];
         final categoryId = stableCategoryId(article.category);
@@ -2133,6 +2162,7 @@ class AppController extends ChangeNotifier {
   List<Player> allPlayers = [];
   List<Player> players = [];
   List<Article> articles = defaultArticles();
+  List<String> articleCategories = defaultArticleCategories();
   List<Sale> sales = [];
   Map<String, List<Sale>> salesBySession = {};
   List<CartItem> cart = [];
@@ -2156,10 +2186,7 @@ class AppController extends ChangeNotifier {
   int get cartCount => cart.fold(0, (sum, item) => sum + item.quantity);
   bool get hasPendingPayment => cart.isNotEmpty || donation > 0;
   bool get canCheckout => selectedPlayer != null && hasPendingPayment;
-  List<String> get categories => [
-        'TOUS',
-        ...{for (final a in articles) a.category}
-      ];
+  List<String> get categories => ['TOUS', ...articleCategories];
   List<Article> get visibleArticles => categoryFilter == 'TOUS'
       ? articles
       : articles.where((a) => a.category == categoryFilter).toList();
@@ -2171,6 +2198,7 @@ class AppController extends ChangeNotifier {
       await _loadLocalState();
     } catch (_) {
       articles = defaultArticles();
+      articleCategories = defaultArticleCategories();
       syncStatus = 'Chargement local en mode dégradé';
     }
     _suspendAutoSync = false;
@@ -2200,6 +2228,10 @@ class AppController extends ChangeNotifier {
     players = await _database.loadPlayers(activeSession!.id);
     final storedArticles = await _database.loadArticles();
     articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
+    final storedCategories = await _database.loadArticleCategories();
+    _setArticleCategories(storedCategories.isEmpty
+        ? defaultArticleCategories()
+        : storedCategories);
     sales = await _database.loadSales(activeSession!.id);
     await refreshSessionSales();
     cashStart = await _database.loadCash(activeSession!.id, 'start');
@@ -2246,6 +2278,10 @@ class AppController extends ChangeNotifier {
       allPlayers = await _database.loadAllPlayers();
       final storedArticles = await _database.loadArticles();
       articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
+      final storedCategories = await _database.loadArticleCategories();
+      _setArticleCategories(storedCategories.isEmpty
+          ? defaultArticleCategories()
+          : storedCategories);
       helloAssoSettings = await _database.loadHelloAssoSettings();
       await _loadActiveSessionState();
       await refreshSessionSales();
@@ -2385,6 +2421,8 @@ class AppController extends ChangeNotifier {
         .toList();
     allPlayers = [...players];
     articles = importedArticles;
+    _setArticleCategories(((state['articleCategories'] as List?) ?? const [])
+        .map((category) => '$category'));
     sales = ((state['sales'] ?? []) as List).map((entry) {
       final sale = Sale.fromJson(Map<String, dynamic>.from(entry as Map));
       return Sale(
@@ -2419,6 +2457,23 @@ class AppController extends ChangeNotifier {
       for (final entry in value.entries)
         '${entry.key}': int.tryParse('${entry.value}') ?? 0,
     };
+  }
+
+  void _setArticleCategories(Iterable<String> storedCategories) {
+    for (final article in articles) {
+      final normalized = normalizedCategoryName(article.category);
+      article.category = normalized.isEmpty ? 'DIVERS' : normalized;
+    }
+    final names = <String>{
+      for (final category in storedCategories)
+        if (normalizedCategoryName(category).isNotEmpty)
+          normalizedCategoryName(category),
+      for (final article in articles)
+        if (normalizedCategoryName(article.category).isNotEmpty)
+          normalizedCategoryName(article.category),
+    }.toList()
+      ..sort();
+    articleCategories = names.isEmpty ? defaultArticleCategories() : names;
   }
 
   void setTab(int value) {
@@ -2768,12 +2823,54 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> upsertArticle(Article article, {Article? replacing}) async {
+    final normalized = normalizedCategoryName(article.category);
+    final category = normalized.isEmpty ? 'DIVERS' : normalized;
+    article.category = category;
+    if (!articleCategories.contains(category)) {
+      articleCategories.add(category);
+      articleCategories.sort();
+    }
     if (replacing == null) {
       articles.add(article);
     } else {
       final index = articles.indexOf(replacing);
       articles[index] = article;
     }
+    notifyListeners();
+    await persist();
+  }
+
+  bool containsArticleCategory(String category, {String? except}) {
+    final normalized = normalizedCategoryName(category);
+    return articleCategories.any((existing) =>
+        existing != except &&
+        (normalizedCategoryName(existing) == normalized ||
+            stableCategoryId(existing) == stableCategoryId(normalized)));
+  }
+
+  Future<void> addArticleCategory(String category) async {
+    final normalized = normalizedCategoryName(category);
+    if (normalized.isEmpty || containsArticleCategory(normalized)) return;
+    articleCategories.add(normalized);
+    articleCategories.sort();
+    notifyListeners();
+    await persist();
+  }
+
+  Future<void> renameArticleCategory(String previous, String category) async {
+    final normalized = normalizedCategoryName(category);
+    if (normalized.isEmpty ||
+        containsArticleCategory(normalized, except: previous)) {
+      return;
+    }
+    final index = articleCategories.indexOf(previous);
+    if (index < 0) return;
+    articleCategories[index] = normalized;
+    articleCategories.sort();
+    for (final article in articles.where((a) => a.category == previous)) {
+      article.category = normalized;
+    }
+    if (categoryFilter == previous) categoryFilter = normalized;
     notifyListeners();
     await persist();
   }
@@ -2842,6 +2939,7 @@ class AppController extends ChangeNotifier {
           'sessions': sessions.map((e) => e.toJson()).toList(),
           'players': allPlayers.map((e) => e.toJson()).toList(),
           'activeSessionPlayers': players.map((e) => e.toJson()).toList(),
+          'articleCategories': articleCategories,
           'articles': articles.map((e) => e.toJson()).toList(),
           'sales': sales.map((e) => e.toJson()).toList(),
           'cashStart': cashStart,
@@ -4441,18 +4539,39 @@ class ArticlesPricePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categories = controller.articles
-        .map((article) => article.category)
-        .toSet()
-        .toList()
-      ..sort();
+    final categories = controller.articleCategories;
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
         const SectionTitle('Articles & Prix'),
         ConfigSection(
+          title: 'Catégories',
+          trailing: OutlinedButton.icon(
+            onPressed: () => showCategoryDialog(context, controller),
+            icon: const Icon(Icons.add),
+            label: const Text('Ajouter'),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final category in categories)
+                  ActionChip(
+                    avatar: const Icon(Icons.edit, size: 16),
+                    label: Text(category),
+                    onPressed: () => showCategoryDialog(context, controller,
+                        category: category),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        ConfigSection(
           title: 'Articles & prix',
-          trailing: FilledButton.icon(
+          trailing: OutlinedButton.icon(
             onPressed: () => showArticleDialog(context, controller),
             icon: const Icon(Icons.add),
             label: const Text('Ajouter'),
@@ -4484,24 +4603,18 @@ class ArticlesPricePage extends StatelessWidget {
                         await controller.deleteArticle(article);
                     },
                   ),
+                if (!controller.articles.any((a) => a.category == category))
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: Text('Aucun article dans cette catégorie',
+                        style: TextStyle(color: AppColors.muted)),
+                  ),
               ],
               if (controller.articles.isEmpty)
                 const Padding(
                     padding: EdgeInsets.all(18),
                     child: Text('Aucun article configuré')),
             ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: FilledButton.icon(
-            onPressed: () {
-              controller.persist();
-              snack(context, 'Configuration enregistrée');
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Enregistrer'),
           ),
         ),
       ],
@@ -5693,6 +5806,57 @@ Future<void> showSessionPicker(
   }
 }
 
+Future<void> showCategoryDialog(BuildContext context, AppController controller,
+    {String? category}) async {
+  final name = TextEditingController(text: category ?? '');
+  String? error;
+  final value = await showDialog<String>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: Text(
+            category == null ? 'Nouvelle catégorie' : 'Modifier catégorie'),
+        content: TextField(
+          controller: name,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: InputDecoration(
+              labelText: 'Nom de la catégorie', errorText: error),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () {
+              final normalized = normalizedCategoryName(name.text);
+              if (normalized.isEmpty) {
+                setState(() => error = 'Saisissez un nom de catégorie');
+                return;
+              }
+              if (controller.containsArticleCategory(normalized,
+                  except: category)) {
+                setState(() => error = 'Cette catégorie existe déjà');
+                return;
+              }
+              Navigator.pop(context, normalized);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (value == null || value == category) return;
+  if (category == null) {
+    await controller.addArticleCategory(value);
+    if (context.mounted) snack(context, 'Catégorie ajoutée');
+  } else {
+    await controller.renameArticleCategory(category, value);
+    if (context.mounted) snack(context, 'Catégorie modifiée');
+  }
+}
+
 Future<void> showArticleDialog(BuildContext context, AppController controller,
     {Article? article}) async {
   final icon = TextEditingController(text: article?.icon ?? '📦');
@@ -5706,16 +5870,7 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
   final bbAuto = TextEditingController(text: article?.bbAuto.toString() ?? '0');
   final gasAuto =
       TextEditingController(text: article?.gasAuto.toString() ?? '0');
-  final categoryOptions = <String>[
-    'BOISSONS',
-    'SNACKING',
-    'MUNITIONS',
-    'REPAS',
-    'GOODIES',
-    'LOCATION',
-    'DIVERS',
-    ...controller.articles.map((a) => a.category),
-  ]
+  final categoryOptions = <String>[...controller.articleCategories]
       .map((category) => category.trim().toUpperCase())
       .where((category) => category.isNotEmpty)
       .toSet()
@@ -5727,14 +5882,16 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
       if (b == 'DIVERS') return -1;
       return a.compareTo(b);
     });
+  if (categoryOptions.isEmpty) categoryOptions.add('DIVERS');
   var category =
       (article?.category ?? categoryOptions.first).trim().toUpperCase();
   if (!categoryOptions.contains(category)) categoryOptions.add(category);
+  var type =
+      article?.type ?? (category == 'LOCATION' ? 'location' : 'standard');
   final ok = await showDialog<bool>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) {
-        final type = category == 'LOCATION' ? 'location' : 'standard';
         return AlertDialog(
           title: Text(article == null ? 'Nouvel article' : 'Modifier article'),
           content: SingleChildScrollView(
@@ -5768,6 +5925,22 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
                   onChanged: (value) {
                     if (value == null) return;
                     setState(() => category = value);
+                  },
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: type,
+                  decoration:
+                      const InputDecoration(labelText: 'Type d’article'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'standard', child: Text('Article en stock')),
+                    DropdownMenuItem(
+                        value: 'location', child: Text('Location')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => type = value);
                   },
                 ),
                 const SizedBox(height: 10),
@@ -5862,7 +6035,6 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
     ),
   );
   if (ok == true && name.text.trim().isNotEmpty) {
-    final type = category == 'LOCATION' ? 'location' : 'standard';
     await controller.upsertArticle(
       Article(
         id: article?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
