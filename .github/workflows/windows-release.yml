@@ -82,7 +82,7 @@ jobs:
             echo "storePassword=${ANDROID_STORE_PASSWORD}"
             echo "keyPassword=${ANDROID_KEY_PASSWORD}"
             echo "keyAlias=${ANDROID_KEY_ALIAS}"
-            echo "storeFile=app/frags-addicts-release.jks"
+            echo "storeFile=frags-addicts-release.jks"
           } > android/key.properties
 
       - name: Install dependencies
