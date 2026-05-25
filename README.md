@@ -1,73 +1,235 @@
 # Frags Addicts Caisse
 
-Application Flutter inspirée de `documentation/Base/caisse_airsoft.html`. Elle reprend l'identité sombre, les accents vert tactique / cyan et les workflows caisse, joueurs, bilan, analyse espèces, KPI et configuration.
+Application de caisse Flutter pour les journees airsoft de Frags Addicts. Elle
+permet de gerer une partie depuis un telephone Android ou un poste Windows :
+inscriptions, ventes, stock, paiements, controle de la caisse et rapports de
+fin de journee.
 
-L'analyse fonctionnelle et graphique complète est dans `documentation/ANALYSE_HTML.md`.
+L'application fonctionne hors ligne avec une base SQLite locale. Les services
+Firebase et HelloAsso sont optionnels : ils ajoutent respectivement la
+synchronisation entre appareils et l'import d'inscrits a un evenement.
 
-## Lancer dans Android Studio
+## Fonctionnalites
 
-1. Installer Flutter et le plugin Flutter dans Android Studio.
-2. Ouvrir ce dossier comme projet Flutter.
-3. Lancer `flutter pub get`.
-4. Sélectionner un émulateur ou un téléphone Android.
-5. Lancer `lib/main.dart`.
+- Gestion de sessions/parties et historique des ventes.
+- Liste des joueurs, distinction public/adherent et tarifs adaptes.
+- Caisse rapide avec panier, dons et paiements especes, PayPal ou SumUp.
+- Catalogue d'articles, locations, stock, seuils d'alerte et mouvements de
+  stock.
+- Analyse de caisse especes : fond de debut, fond de fin, attendu et ecart.
+- Tableau KPI : chiffre d'affaires, produits vendus, alertes stock et
+  suggestions de reapprovisionnement.
+- Exports PDF : bilan de session, joueurs, analyse de caisse et KPI.
+- Export/restauration d'une sauvegarde JSON complete dans le dossier
+  `Downloads`.
+- Synchronisation manuelle Firebase Auth/Cloud Firestore lorsque configuree.
+- Import optionnel d'evenements et de joueurs payants depuis HelloAsso.
+- Verification des mises a jour publiees sur GitHub dans les builds release
+  Android et Windows.
 
-Si Android Studio demande le chemin du SDK Flutter, renseigner le dossier d'installation Flutter. Le fichier `android/local.properties` sera généré localement.
+## Plateformes
 
-## Structure
+Les artefacts distribues sont prevus pour :
 
-- `lib/main.dart` : application complète, modèles, état, pages et composants.
-- `android/` : squelette Android pour Android Studio.
-- `windows/` : cible Windows Flutter.
-- `.github/workflows/` : génération automatique de l'app Windows et de l'installateur.
-- `installer/` : script Inno Setup pour l'installateur Windows.
-- `documentation/Base/caisse_airsoft.html` : source HTML d'origine conservée comme référence fonctionnelle.
-- `a_supprimer/` : fichiers locaux/caches déplacés pendant le nettoyage, non versionnés.
+- Android : fichier APK installable directement.
+- Windows x64 : installateur `.exe` ou archive portable `.zip`.
 
-## Fonctionnement
+L'interface est responsive : navigation basse et ecran vertical sur mobile,
+navigation laterale et panneaux multiples sur tablette ou ecran large.
 
-L'application stocke les données localement dans une base SQLite privée à l'appareil via `sqflite` :
+## Installation Utilisateur
 
-- `players` : joueurs publics ou adhérents.
-- `articles` : boissons, billes, snacks, locations, prix et stocks.
-- `sales` et `sale_items` : ventes et lignes de vente avec snapshots des prix/noms.
-- `cash_counts` et `cash_count_lines` : fond de caisse début/fin par coupure.
-- `app_settings` : réglages simples comme le nom de session.
+### Android
 
-Les boutons de sauvegarde exportent toujours un JSON dans le presse-papiers pour garder une copie manuelle.
+1. Telecharger le dernier fichier
+   `FragsAddictsCaisse-Android-<version>.apk` depuis la page
+   [Releases GitHub](https://github.com/Kaalister/Frag-addict-caisse-app/releases/latest).
+2. Ouvrir le fichier APK sur le telephone.
+3. Autoriser l'installation d'applications provenant de cette source si
+   Android le demande, puis installer l'application.
+4. Lancer **Caisse Airsoft**.
 
-## Synchronisation Firebase
+Les donnees sont stockees localement sur le telephone. Pour changer d'appareil,
+utiliser **Config > Exporter** puis **Restaurer**, ou configurer Firebase.
 
-La base locale SQLite peut être synchronisée entre Android et Windows avec Firebase Auth email/mot de passe et Cloud Firestore. La configuration du projet Firebase est décrite dans `documentation/FIREBASE_SETUP.md`.
+### Windows
 
-## Mises à jour GitHub
+1. Telecharger `FragsAddictsCaisseSetup-<version>.exe` depuis la page
+   [Releases GitHub](https://github.com/Kaalister/Frag-addict-caisse-app/releases/latest).
+2. Executer l'installateur et suivre l'assistant.
+3. Lancer **Frags Addicts Caisse** depuis le menu Demarrer ou le raccourci
+   cree pendant l'installation.
 
-Les builds release Android et Windows vérifient au lancement la dernière Release GitHub du dépôt `Kaalister/Frag-addict-caisse-app`. Si le tag publié est supérieur à la version installée, l'application affiche un écran bloquant et envoie l'utilisateur vers l'APK Android ou l'installateur Windows attaché à la Release.
+L'archive `FragsAddictsCaisse-Windows-<version>.zip` est disponible pour un
+usage portable : extraire tout le dossier puis executer
+`frags_addicts_caisse.exe`.
 
-Flux de publication :
+## Utilisation
 
-1. Créer un tag SemVer préfixé par `v`, par exemple `v1.0.1`.
-2. Pousser le tag sur GitHub.
-3. Le workflow `Build releases` compile l'APK Android et les artefacts Windows, puis les attache à la Release GitHub.
-4. Les applications installées détectent automatiquement cette Release au prochain lancement.
+1. Creer une nouvelle session depuis l'historique ou selectionner la session
+   active.
+2. Ajouter ou importer les joueurs, puis saisir les achats depuis l'ecran
+   caisse.
+3. Configurer les articles et le stock dans l'ecran de configuration des
+   tarifs.
+4. Saisir les fonds de caisse debut/fin et consulter l'analyse especes.
+5. Exporter les bilans PDF et une sauvegarde JSON avant archivage ou transfert
+   vers un autre appareil.
 
-Secrets GitHub Actions requis pour signer l'APK Android sans passer par le Play Store :
+### Firebase, optionnel
 
-- `ANDROID_KEYSTORE_BASE64` : contenu base64 du fichier `android/app/frags-addicts-release.jks`.
-- `ANDROID_STORE_PASSWORD` : mot de passe du keystore.
-- `ANDROID_KEY_PASSWORD` : mot de passe de la clé.
-- `ANDROID_KEY_ALIAS` : alias de la clé, par exemple `frags-addicts-release`.
+Sans connexion Firebase, l'application reste utilisable avec sa base locale.
+Une fois Firebase configure et un utilisateur connecte dans **Config**, le
+bouton **Synchroniser** envoie ou recupere un snapshot de la base. En cas de
+conflit, les donnees ayant la date `updatedAt` la plus recente gagnent.
 
-Pour encoder le keystore local avant de le coller dans le secret GitHub :
+La procedure de creation et de configuration Firebase est detaillee dans
+[`documentation/FIREBASE_SETUP.md`](documentation/FIREBASE_SETUP.md).
+
+### HelloAsso, optionnel
+
+Dans **Config > HelloAsso**, renseigner le slug de l'association, un client ID,
+un secret API et l'environnement (production ou sandbox). Lors de la creation
+d'une session, l'application peut alors lier un evenement HelloAsso et importer
+les payeurs inscrits.
+
+## Donnees Locales
+
+La base SQLite contient notamment :
+
+| Donnee | Usage |
+| --- | --- |
+| Sessions | Parties, dates et lien evenement HelloAsso |
+| Joueurs | Public/adherent et presence par session |
+| Articles et categories | Prix, prix adherent, stock et seuils |
+| Ventes et lignes de vente | Panier valide, moyen de paiement et snapshots |
+| Mouvements de stock | Historique des variations |
+| Comptages de caisse | Fonds de debut et de fin par denomination |
+| Parametres | Session active, HelloAsso et metadonnees de synchronisation |
+
+En mode developpement, la base et le snapshot Firebase utilisent un suffixe
+`_dev` afin de ne pas ecraser les donnees de production.
+
+## Dependances
+
+### Prerequis de developpement
+
+- Flutter avec Dart `>=3.3.0 <4.0.0`.
+- Android Studio ou le SDK Android pour executer/compiler Android.
+- Pour compiler Windows : Windows avec Visual Studio et la charge de travail
+  **Desktop development with C++**.
+- Pour produire l'installateur Windows : Inno Setup 6.
+
+### Paquets Flutter principaux
+
+| Package | Role |
+| --- | --- |
+| `sqflite` | Stockage SQLite sur Android |
+| `sqflite_common_ffi` | Stockage SQLite sur Windows/desktop |
+| `path` et `path_provider` | Emplacement de la base et des fichiers exportes |
+| `pdf` | Generation des rapports PDF |
+| `firebase_core` | Initialisation Firebase |
+| `firebase_auth` | Connexion email/mot de passe pour la synchronisation |
+| `cloud_firestore` | Stockage du snapshot synchronise |
+| `http` | Appels API HelloAsso et controle des Releases GitHub |
+| `flutter_lints` et `flutter_test` | Analyse statique et tests |
+
+Les versions exactes se trouvent dans [`pubspec.yaml`](pubspec.yaml).
+
+## Installation Developpeur
+
+### Recuperer et lancer le projet
+
+```bash
+git clone https://github.com/Kaalister/Frag-addict-caisse-app.git
+cd Frag-addict-caisse-app
+flutter doctor
+flutter pub get
+```
+
+Pour Android, demarrer un emulateur ou brancher un appareil avec le debogage
+USB active, puis :
+
+```bash
+flutter devices
+flutter run -d <device-id>
+```
+
+Pour Windows, executer ces commandes depuis un poste Windows :
+
+```powershell
+flutter config --enable-windows-desktop
+flutter run -d windows
+```
+
+Firebase n'est pas requis pour lancer l'application. Pour brancher un projet
+Firebase propre a un environnement :
+
+```bash
+dart pub global activate flutterfire_cli
+flutterfire configure --platforms=android,windows
+```
+
+Activer ensuite Firebase Authentication par email/mot de passe et Cloud
+Firestore comme explique dans
+[`documentation/FIREBASE_SETUP.md`](documentation/FIREBASE_SETUP.md).
+
+### Verification
+
+```bash
+flutter analyze --no-fatal-infos
+flutter test
+```
+
+### Builds locaux
+
+```bash
+flutter build apk --release
+flutter build windows --release
+```
+
+Le build APK release signe necessite un keystore Android et un fichier local
+`android/key.properties`. Le build Windows doit etre execute depuis Windows.
+
+## Publication Des Releases
+
+Le workflow [`.github/workflows/windows-release.yml`](.github/workflows/windows-release.yml)
+construit les artefacts lors d'un tag SemVer prefixe par `v`, par exemple
+`v1.1.2` :
+
+- APK Android signe ;
+- archive portable Windows ;
+- installateur Windows Inno Setup.
+
+Pour la signature Android, les secrets GitHub Actions suivants doivent etre
+configures :
+
+| Secret | Contenu |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Keystore Android encode en base64 |
+| `ANDROID_STORE_PASSWORD` | Mot de passe du keystore |
+| `ANDROID_KEY_PASSWORD` | Mot de passe de la cle |
+| `ANDROID_KEY_ALIAS` | Alias de signature |
+
+Sur macOS, le keystore peut etre encode avant ajout dans GitHub avec :
 
 ```bash
 base64 -i android/app/frags-addicts-release.jks | pbcopy
 ```
 
-Android demandera éventuellement à l'utilisateur d'autoriser l'installation depuis le navigateur ou le gestionnaire de fichiers. C'est normal pour une distribution APK directe hors Play Store.
+## Structure Du Depot
 
-## Responsive
+| Chemin | Contenu |
+| --- | --- |
+| `lib/main.dart` | Application, modele, base locale, UI et exports |
+| `lib/firebase_options.dart` | Options Firebase generees par FlutterFire |
+| `android/` | Projet Android |
+| `windows/` | Projet Windows |
+| `installer/` | Script Inno Setup pour l'installateur Windows |
+| `.github/workflows/` | Compilation et publication automatique |
+| `documentation/` | Documentation Firebase, analyse et references PDF/HTML |
+| `test/` | Tests Flutter |
 
-- Mobile : navigation basse, caisse en flux vertical avec joueurs, articles puis panier.
-- Tablette : navigation latérale, caisse en trois panneaux joueurs / produits / panier.
-- Les grilles utilisent des largeurs maximales et des ruptures de layout pour éviter les débordements.
+L'application est issue de la reference fonctionnelle et graphique conservee
+dans `documentation/Base/caisse_airsoft.html`. L'analyse correspondante se
+trouve dans [`documentation/ANALYSE_HTML.md`](documentation/ANALYSE_HTML.md).
