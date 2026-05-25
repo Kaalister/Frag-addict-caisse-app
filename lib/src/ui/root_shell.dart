@@ -9,15 +9,17 @@ class RootShell extends StatefulWidget {
 
 class _RootShellState extends State<RootShell> {
   final controller = AppController();
+  late final Future<void> _initialLoad;
   AppUpdateResult? updateResult;
   bool checkingUpdate = false;
   bool openingUpdate = false;
   String? updateActionError;
+  String? updateBackupStatus;
 
   @override
   void initState() {
     super.initState();
-    controller.load();
+    _initialLoad = controller.load();
     _checkForUpdate();
   }
 
@@ -48,8 +50,16 @@ class _RootShellState extends State<RootShell> {
     setState(() {
       openingUpdate = true;
       updateActionError = null;
+      updateBackupStatus = null;
     });
     try {
+      await _initialLoad;
+      final recoveryFile = await saveRecoveryBackup(controller, 'mise-a-jour');
+      if (!mounted) return;
+      setState(() {
+        updateBackupStatus =
+            'Copie de sécurité créée : ${recoveryFile['name']}';
+      });
       await openExternalUrl(update.downloadUrl);
     } catch (error) {
       if (mounted) setState(() => updateActionError = '$error');
@@ -69,6 +79,7 @@ class _RootShellState extends State<RootShell> {
             update: requiredUpdate,
             opening: openingUpdate,
             actionError: updateActionError,
+            backupStatus: updateBackupStatus,
             onDownload: () => _openUpdate(requiredUpdate),
             onRetry: _checkForUpdate,
           );
@@ -247,12 +258,14 @@ class UpdateRequiredScaffold extends StatelessWidget {
     required this.onDownload,
     required this.onRetry,
     this.actionError,
+    this.backupStatus,
     super.key,
   });
 
   final AppUpdateInfo update;
   final bool opening;
   final String? actionError;
+  final String? backupStatus;
   final VoidCallback onDownload;
   final VoidCallback onRetry;
 
@@ -297,6 +310,14 @@ class UpdateRequiredScaffold extends StatelessWidget {
                         style: const TextStyle(color: AppColors.muted),
                       ),
                     ],
+                    const SizedBox(height: 14),
+                    Text(
+                      Platform.isAndroid
+                          ? 'Installe le nouvel APK par-dessus l’application existante. Ne la désinstalle pas et n’efface pas ses données : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.'
+                          : 'Exécute l’installateur sur l’installation existante. Ne supprime pas les données de l’application : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
                     const SizedBox(height: 18),
                     FilledButton.icon(
                       onPressed: opening ? null : onDownload,
@@ -308,8 +329,8 @@ class UpdateRequiredScaffold extends StatelessWidget {
                           : const Icon(Icons.download),
                       label: Text(
                         Platform.isAndroid
-                            ? 'Télécharger l’APK'
-                            : 'Télécharger l’installateur',
+                            ? 'Sauvegarder puis télécharger l’APK'
+                            : 'Sauvegarder puis télécharger l’installateur',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -318,6 +339,14 @@ class UpdateRequiredScaffold extends StatelessWidget {
                       icon: const Icon(Icons.refresh),
                       label: const Text('Re-vérifier'),
                     ),
+                    if (backupStatus != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        backupStatus!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.accent),
+                      ),
+                    ],
                     if (actionError != null) ...[
                       const SizedBox(height: 12),
                       Text(

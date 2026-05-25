@@ -378,7 +378,7 @@ class ConfigPage extends StatelessWidget {
     }
     final update = updateResult?.update;
     if (update != null) {
-      return 'Version $_appBuildVersion installée, version ${update.latestVersion} publiée sur GitHub. Fichier : ${update.assetName}.';
+      return 'Version $_appBuildVersion installée, version ${update.latestVersion} publiée sur GitHub. Fichier : ${update.assetName}. Une copie locale est créée avant le téléchargement.';
     }
     if (updateResult?.error != null) {
       return '${updateResult!.error} Version build : $_appBuildVersion.';

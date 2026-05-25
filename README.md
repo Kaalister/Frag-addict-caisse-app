@@ -55,6 +55,27 @@ navigation laterale et panneaux multiples sur tablette ou ecran large.
 Les donnees sont stockees localement sur le telephone. Pour changer d'appareil,
 utiliser **Config > Exporter** puis **Restaurer**, ou configurer Firebase.
 
+### Mettre A Jour Sans Perte De Donnees
+
+Une mise a jour doit remplacer l'installation existante, sans la
+desinstaller et sans effacer ses donnees :
+
+- Android : ouvrir le nouvel APK et choisir l'installation/mise a jour de
+  l'application deja presente. L'identifiant `com.fragsaddicts.caisse` et la
+  signature de publication doivent rester identiques.
+- Windows : executer le nouvel installateur dans le meme emplacement. Il
+  remplace les fichiers du programme sans supprimer les donnees utilisateur
+  stockees hors du dossier d'installation.
+- Depuis l'ecran de mise a jour de l'application, une sauvegarde JSON de
+  recuperation est automatiquement creee dans `Downloads` avant l'ouverture
+  du fichier a telecharger.
+
+Dans ce scenario, la base SQLite locale n'est pas supprimee, Firebase Auth
+conserve la session de l'utilisateur et le secret HelloAsso reste dans le
+stockage securise de l'appareil. Une desinstallation, un effacement des
+donnees Android ou l'utilisation d'une autre signature APK ne constitue pas
+une mise a jour et ne permet pas cette conservation.
+
 ### Windows
 
 1. Telecharger `FragsAddictsCaisseSetup-<version>.exe` depuis la page
@@ -221,6 +242,13 @@ configures :
 | `ANDROID_STORE_PASSWORD` | Mot de passe du keystore |
 | `ANDROID_KEY_PASSWORD` | Mot de passe de la cle |
 | `ANDROID_KEY_ALIAS` | Alias de signature |
+
+Le keystore et son alias constituent l'identite de l'application installee.
+Ils doivent etre archives et reutilises pour toutes les releases Android :
+Android refuse une mise a jour signee avec une autre cle. Ne jamais changer
+non plus `applicationId = "com.fragsaddicts.caisse"` pour une release de mise
+a jour, sous peine d'installer une deuxieme application sans acces aux donnees
+locales de la precedente.
 
 Sur macOS, le keystore peut etre encode avant ajout dans GitHub avec :
 
