@@ -1,4 +1,4 @@
-name: Build Windows
+name: Build releases
 
 on:
   workflow_dispatch:
@@ -13,6 +13,111 @@ permissions:
   contents: write
 
 jobs:
+  android:
+    name: Android release APK
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Read app version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            app_version="${GITHUB_REF_NAME#v}"
+          else
+            pubspec_version="$(grep -E '^version:' pubspec.yaml | head -n 1 | sed -E 's/version:[[:space:]]*//')"
+            app_version="${pubspec_version%%+*}"
+          fi
+          clean_version="${app_version%%-*}"
+          IFS='.' read -r major minor patch <<< "${clean_version}"
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+          build_number=$((10#${major} * 1000000 + 10#${minor} * 1000 + 10#${patch}))
+          if [[ "${build_number}" -lt 2 ]]; then
+            build_number=2
+          fi
+          echo "app_version=${app_version}" >> "${GITHUB_OUTPUT}"
+          echo "build_number=${build_number}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate Android signing secrets
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          test -n "${ANDROID_KEYSTORE_BASE64}"
+          test -n "${ANDROID_STORE_PASSWORD}"
+          test -n "${ANDROID_KEY_PASSWORD}"
+          test -n "${ANDROID_KEY_ALIAS}"
+
+      - name: Restore Android signing files
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          printf "%s" "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > android/app/frags-addicts-release.jks
+          {
+            echo "storePassword=${ANDROID_STORE_PASSWORD}"
+            echo "keyPassword=${ANDROID_KEY_PASSWORD}"
+            echo "keyAlias=${ANDROID_KEY_ALIAS}"
+            echo "storeFile=app/frags-addicts-release.jks"
+          } > android/key.properties
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        run: flutter test
+
+      - name: Build Android APK
+        run: >
+          flutter build apk --release
+          --build-name "${{ steps.version.outputs.app_version }}"
+          --build-number "${{ steps.version.outputs.build_number }}"
+          --dart-define=APP_VERSION=${{ steps.version.outputs.app_version }}
+
+      - name: Prepare Android artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/FragsAddictsCaisse-Android-${{ steps.version.outputs.app_version }}.apk"
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frags-addicts-caisse-android-${{ steps.version.outputs.app_version }}
+          path: dist/*.apk
+
+      - name: Attach Android APK to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+
   windows:
     name: Windows release
     runs-on: windows-latest
@@ -31,9 +136,13 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' | Select-Object -First 1
-          $pubspecVersion = $line.Matches[0].Groups[1].Value.Trim()
-          $appVersion = $pubspecVersion.Split('+')[0]
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $appVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          } else {
+            $line = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$' | Select-Object -First 1
+            $pubspecVersion = $line.Matches[0].Groups[1].Value.Trim()
+            $appVersion = $pubspecVersion.Split('+')[0]
+          }
           "app_version=$appVersion" >> $env:GITHUB_OUTPUT
 
       - name: Install dependencies
@@ -46,7 +155,9 @@ jobs:
         run: flutter test
 
       - name: Build Windows app
-        run: flutter build windows --release
+        run: >
+          flutter build windows --release
+          --dart-define=APP_VERSION=${{ steps.version.outputs.app_version }}
 
       - name: Create portable zip
         shell: pwsh
@@ -76,7 +187,7 @@ jobs:
             dist\*.zip
             dist\*.exe
 
-      - name: Attach artifacts to GitHub release
+      - name: Attach Windows artifacts to GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
