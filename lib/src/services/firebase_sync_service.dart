@@ -1,0 +1,168 @@
+part of '../../main.dart';
+
+enum FirebaseSyncAction {
+  disabled,
+  noUser,
+  pushed,
+  pulled,
+  remoteNewer,
+  unchanged,
+  error
+}
+
+class FirebaseSyncResult {
+  const FirebaseSyncResult(this.action, this.message, {this.syncedAt});
+
+  final FirebaseSyncAction action;
+  final String message;
+  final DateTime? syncedAt;
+}
+
+class FirebaseSyncService {
+  FirebaseSyncService();
+
+  DocumentReference<Map<String, dynamic>> _snapshotRef(User user) =>
+      FirebaseFirestore.instance
+          .collection('organizations')
+          .doc('frags-addicts')
+          .collection('users')
+          .doc(user.uid)
+          .collection('snapshots')
+          .doc(_firebaseSnapshotId);
+
+  bool get isAvailable =>
+      FirebaseBootstrap.initialized &&
+      FirebaseAuth.instance.currentUser != null;
+
+  Future<bool> hasRemoteSnapshot() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (!FirebaseBootstrap.initialized || user == null) return false;
+    return (await _snapshotRef(user).get()).exists;
+  }
+
+  Future<FirebaseSyncResult> synchronize(LocalDatabase database,
+      {bool allowPull = false}) async {
+    if (!FirebaseBootstrap.initialized) {
+      return FirebaseSyncResult(FirebaseSyncAction.disabled,
+          FirebaseBootstrap.error ?? 'Firebase non configuré');
+    }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const FirebaseSyncResult(
+          FirebaseSyncAction.noUser, 'Connexion Firebase requise');
+    }
+    try {
+      final snapshotRef = _snapshotRef(user);
+      final remote = await snapshotRef.get();
+      final localUpdatedAt = await database.loadLocalUpdatedAt();
+      if (remote.exists) {
+        final data = remote.data() ?? const <String, dynamic>{};
+        final remoteUpdatedAt = _remoteUpdatedAt(data);
+        final remotePayload =
+            Map<String, dynamic>.from(data['payload'] as Map? ?? const {});
+        final payload = _withoutHelloAssoSecret(remotePayload);
+        if (jsonEncode(payload) != jsonEncode(remotePayload)) {
+          await snapshotRef.update({'payload': _jsonSafe(payload)});
+        }
+        final shouldPull = payload.isNotEmpty &&
+            remoteUpdatedAt != null &&
+            (localUpdatedAt == null ||
+                remoteUpdatedAt.isAfter(localUpdatedAt) ||
+                await database.hasOnlyBootstrapData());
+        if (shouldPull) {
+          if (!allowPull) {
+            return FirebaseSyncResult(FirebaseSyncAction.remoteNewer,
+                'Firebase contient des donnees plus recentes. Confirme la restauration pour les recuperer.',
+                syncedAt: remoteUpdatedAt);
+          }
+          await database.replaceFromExport(payload);
+          await database.saveSyncMetadata(remoteUpdatedAt);
+          return FirebaseSyncResult(
+              FirebaseSyncAction.pulled, 'Données Firebase récupérées',
+              syncedAt: remoteUpdatedAt);
+        }
+        if (localUpdatedAt == null ||
+            (remoteUpdatedAt != null &&
+                !localUpdatedAt.isAfter(remoteUpdatedAt))) {
+          final syncedAt = remoteUpdatedAt ?? DateTime.now();
+          await database.saveSyncMetadata(syncedAt);
+          return FirebaseSyncResult(
+              FirebaseSyncAction.unchanged, 'Données déjà synchronisées',
+              syncedAt: syncedAt);
+        }
+      } else if (localUpdatedAt == null) {
+        return const FirebaseSyncResult(
+            FirebaseSyncAction.unchanged, 'Aucune donnée à synchroniser');
+      }
+
+      final payload = await database.exportAll();
+      final updatedAt = localUpdatedAt;
+      await snapshotRef.set({
+        'payload': _jsonSafe(payload),
+        'updatedAt': updatedAt.toIso8601String(),
+        'updatedAtMillis': updatedAt.millisecondsSinceEpoch,
+        'ownerUid': user.uid,
+        'updatedBy': user.email ?? user.uid,
+      });
+      await database.saveSyncMetadata(updatedAt);
+      return FirebaseSyncResult(
+          FirebaseSyncAction.pushed, 'Données envoyées vers Firebase',
+          syncedAt: updatedAt);
+    } catch (exception) {
+      debugPrint('Firebase sync failed: $exception');
+      return FirebaseSyncResult(
+          FirebaseSyncAction.error, _friendlySyncError(exception));
+    }
+  }
+
+  DateTime? _remoteUpdatedAt(Map<String, dynamic> data) {
+    final millis = data['updatedAtMillis'];
+    if (millis is num) {
+      return DateTime.fromMillisecondsSinceEpoch(millis.round());
+    }
+    return DateTime.tryParse('${data['updatedAt'] ?? ''}');
+  }
+
+  Object _jsonSafe(Object value) {
+    return jsonDecode(jsonEncode(value)) as Object;
+  }
+
+  Map<String, dynamic> _withoutHelloAssoSecret(
+      Map<String, dynamic> sourcePayload) {
+    final payload =
+        Map<String, dynamic>.from(jsonDecode(jsonEncode(sourcePayload)) as Map);
+    final data = payload['data'];
+    if (data is! Map) return payload;
+    final rows = data['appSettings'];
+    if (rows is! List) return payload;
+    for (final row in rows.whereType<Map>()) {
+      if (row['key'] != 'helloasso_settings') continue;
+      try {
+        final settings = HelloAssoSettings.fromJson(
+            Map<String, dynamic>.from(jsonDecode('${row['value']}') as Map));
+        row['value'] = jsonEncode(settings.toJson(includeSecret: false));
+      } catch (_) {
+        row['value'] = '{}';
+      }
+    }
+    return payload;
+  }
+
+  String _friendlySyncError(Object exception) {
+    if (exception is FirebaseException &&
+        exception.code == 'permission-denied') {
+      return 'Accès Firestore refusé. Vérifie les règles dans Firebase Console.';
+    }
+    if (exception is FirebaseException) {
+      final detail = exception.message ?? exception.code;
+      return 'Synchronisation Firebase impossible (${exception.code}) : ${_shortError(detail)}';
+    }
+    return 'Synchronisation Firebase impossible : ${_shortError(exception)}';
+  }
+
+  String _shortError(Object detail) {
+    final text = detail.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (text.length <= 180) return text;
+    return '${text.substring(0, 177)}...';
+  }
+}

@@ -14,8 +14,11 @@ synchronisation entre appareils et l'import d'inscrits a un evenement.
 - Gestion de sessions/parties et historique des ventes.
 - Liste des joueurs, distinction public/adherent et tarifs adaptes.
 - Caisse rapide avec panier, dons et paiements especes, PayPal ou SumUp.
+- Onglet repas : preparation a l'avance, suivi a servir/prepare/servi,
+  repas HelloAsso ou achete sur place, sauces et notes rapides.
 - Catalogue d'articles, locations, stock, seuils d'alerte et mouvements de
   stock.
+- Sorties de stock au nom de l'association, sans vente ni paiement.
 - Analyse de caisse especes : fond de debut, fond de fin, attendu et ecart.
 - Tableau KPI : chiffre d'affaires, produits vendus, alertes stock et
   suggestions de reapprovisionnement.
@@ -80,8 +83,9 @@ usage portable : extraire tout le dossier puis executer
 
 Sans connexion Firebase, l'application reste utilisable avec sa base locale.
 Une fois Firebase configure et un utilisateur connecte dans **Config**, le
-bouton **Synchroniser** envoie ou recupere un snapshot de la base. En cas de
-conflit, les donnees ayant la date `updatedAt` la plus recente gagnent.
+bouton **Synchroniser** envoie ou recupere un snapshot de la base. Une
+recuperation Firebase plus recente exige une confirmation et cree auparavant
+une sauvegarde locale de securite. Aucun transfert ne se fait au demarrage.
 
 La procedure de creation et de configuration Firebase est detaillee dans
 [`documentation/FIREBASE_SETUP.md`](documentation/FIREBASE_SETUP.md).
@@ -91,7 +95,8 @@ La procedure de creation et de configuration Firebase est detaillee dans
 Dans **Config > HelloAsso**, renseigner le slug de l'association, un client ID,
 un secret API et l'environnement (production ou sandbox). Lors de la creation
 d'une session, l'application peut alors lier un evenement HelloAsso et importer
-les payeurs inscrits.
+les payeurs inscrits. Le secret est conserve dans le stockage securise de
+l'appareil et est exclu des exports JSON et de Firebase.
 
 ## Donnees Locales
 
@@ -103,9 +108,15 @@ La base SQLite contient notamment :
 | Joueurs | Public/adherent et presence par session |
 | Articles et categories | Prix, prix adherent, stock et seuils |
 | Ventes et lignes de vente | Panier valide, moyen de paiement et snapshots |
+| Repas | Origine, statut, formule, boisson/snack inclus et indications |
 | Mouvements de stock | Historique des variations |
 | Comptages de caisse | Fonds de debut et de fin par denomination |
 | Parametres | Session active, HelloAsso et metadonnees de synchronisation |
+
+Les locations restent facturables mais ne consomment jamais de stock. Une
+consommation interne peut etre enregistree dans **Articles & prix > Sortie
+asso** ; elle diminue le stock et alimente les statistiques sans generer de
+paiement ni de chiffre d'affaires.
 
 En mode developpement, la base et le snapshot Firebase utilisent un suffixe
 `_dev` afin de ne pas ecraser les donnees de production.
@@ -221,7 +232,10 @@ base64 -i android/app/frags-addicts-release.jks | pbcopy
 
 | Chemin | Contenu |
 | --- | --- |
-| `lib/main.dart` | Application, modele, base locale, UI et exports |
+| `lib/main.dart` | Point d'entree et assemblage des modules |
+| `lib/src/controllers/` | Orchestration de la caisse et regles metier |
+| `lib/src/data/`, `lib/src/services/` | SQLite, Firebase, HelloAsso et secrets |
+| `lib/src/ui/`, `lib/src/exports/` | Ecrans, dialogues et exports PDF |
 | `lib/firebase_options.dart` | Options Firebase generees par FlutterFire |
 | `android/` | Projet Android |
 | `windows/` | Projet Windows |

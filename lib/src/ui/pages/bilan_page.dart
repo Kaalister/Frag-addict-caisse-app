@@ -1,0 +1,129 @@
+part of '../../../main.dart';
+
+class BilanPage extends StatelessWidget {
+  const BilanPage({required this.controller, super.key});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final totals = controller.paymentTotals();
+    final donations = controller.sales
+        .fold<double>(0, (total, sale) => total + sale.donation);
+    final total =
+        totals.values.fold<double>(0, (total, value) => total + value);
+    final sold = <String, ({int quantity, double total})>{};
+    for (final sale in controller.sales) {
+      for (final item in sale.items) {
+        final current = sold[item.name] ?? (quantity: 0, total: 0.0);
+        sold[item.name] = (
+          quantity: current.quantity + item.quantity,
+          total: current.total + item.price * item.quantity
+        );
+      }
+    }
+    final soldEntries = sold.entries.toList()
+      ..sort((a, b) => b.value.total.compareTo(a.value.total));
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      children: [
+        SectionTitle('Bilan de la journée',
+            trailing: IconButton.filledTonal(
+                onPressed: () => copyBackup(context, controller),
+                icon: const Icon(Icons.copy_all))),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: MediaQuery.sizeOf(context).width > 700 ? 4 : 2,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.65,
+          children: [
+            MetricCard(
+                label: 'Espèces',
+                value: money(totals['ESP'] ?? 0),
+                color: AppColors.cash),
+            MetricCard(
+                label: 'PayPal',
+                value: money(totals['PayPal'] ?? 0),
+                color: AppColors.paypal),
+            MetricCard(
+                label: 'SumUp',
+                value: money(totals['SumUp'] ?? 0),
+                color: AppColors.sumup),
+            MetricCard(
+                label: 'Total',
+                value: money(total),
+                color: AppColors.accent,
+                caption: '${controller.sales.length} vente(s)'),
+            MetricCard(
+                label: 'Dons',
+                value: money(donations),
+                color: AppColors.accent2),
+          ],
+        ),
+        const SectionTitle('Stock vendu'),
+        TacticalCard(
+          child: Column(
+            children: [
+              for (final entry in soldEntries)
+                ListTile(
+                  dense: true,
+                  title: Text(entry.key),
+                  subtitle: Text('${entry.value.quantity} unité(s)'),
+                  trailing: Text(money(entry.value.total),
+                      style: const TextStyle(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w900)),
+                ),
+              if (soldEntries.isEmpty)
+                const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text('Aucun article vendu')),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class MetricCard extends StatelessWidget {
+  const MetricCard(
+      {required this.label,
+      required this.value,
+      required this.color,
+      this.caption,
+      super.key});
+
+  final String label;
+  final String value;
+  final String? caption;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return TacticalCard(
+      borderColor: color,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label.toUpperCase(),
+              style: const TextStyle(
+                  color: AppColors.muted, fontSize: 12, letterSpacing: 1.6)),
+          const SizedBox(height: 4),
+          FittedBox(
+              child: Text(value,
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 24))),
+          if (caption != null)
+            Text(caption!,
+                style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}

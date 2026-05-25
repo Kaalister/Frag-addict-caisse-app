@@ -26,7 +26,7 @@ L'app Android utilise le package :
 com.fragsaddicts.caisse
 ```
 
-## 3. Règles Firestore V1
+## 3. Règles Firestore
 
 Pour une première version privée, utiliser des règles strictes avec authentification obligatoire :
 
@@ -35,8 +35,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /organizations/frags-addicts/{document=**} {
-      allow read, write: if request.auth != null;
+    match /organizations/frags-addicts/users/{userId}/snapshots/{snapshotId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
     }
   }
 }
@@ -44,10 +45,12 @@ service cloud.firestore {
 
 ## 4. Modèle de synchronisation
 
-La V1 synchronise un snapshot complet SQLite dans :
+L'app synchronise manuellement un snapshot complet SQLite par utilisateur dans :
 
 ```txt
-organizations/frags-addicts/snapshots/caisse-main
+organizations/frags-addicts/users/{uid}/snapshots/caisse-main
 ```
 
-La règle de conflit est volontairement simple : le `updatedAt` le plus récent gagne.
+Si le snapshot distant est plus recent, l'app demande confirmation et exporte
+une copie de securite locale avant toute restauration. Le secret HelloAsso
+n'est ni exporte ni synchronise.
