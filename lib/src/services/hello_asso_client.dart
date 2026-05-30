@@ -16,7 +16,10 @@ class HelloAssoClient {
     }
     final response = await http.post(
       Uri.parse('${settings.authBaseUrl}/oauth2/token'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
       body: {
         'grant_type': 'client_credentials',
         'client_id': settings.clientId,
@@ -24,7 +27,8 @@ class HelloAssoClient {
       },
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Connexion HelloAsso refusée (${response.statusCode})');
+      throw Exception(
+          'Connexion HelloAsso refusée (${response.statusCode}) en ${settings.isSandbox ? 'sandbox' : 'production'}${_errorDetails(response.body)}');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     _token = '${data['access_token']}';
@@ -43,7 +47,8 @@ class HelloAssoClient {
         'Accept': 'application/json'
       });
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception('Erreur HelloAsso (${response.statusCode})');
+        throw Exception(
+            'Erreur HelloAsso (${response.statusCode})${_errorDetails(response.body)}');
       }
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final pageRows = (data['data'] ?? data['items'] ?? []) as List;
@@ -87,6 +92,49 @@ class HelloAssoClient {
 
   Future<List<HelloAssoRegistrant>> fetchPaidOrderPayers(
       HelloAssoEvent event) async {
+    final itemRegistrants = await _fetchPaidItemUsers(event);
+    if (itemRegistrants.isNotEmpty) return itemRegistrants;
+
+    return _fetchPaidOrderPayers(event);
+  }
+
+  Future<List<HelloAssoRegistrant>> _fetchPaidItemUsers(
+      HelloAssoEvent event) async {
+    final uri = Uri.parse(
+            '${settings.apiBaseUrl}/organizations/${Uri.encodeComponent(settings.organizationSlug)}/forms/${event.formType}/${Uri.encodeComponent(event.formSlug)}/items')
+        .replace(queryParameters: {
+      'withDetails': 'true',
+      'pageSize': '100',
+    });
+    final rows = await _getPaged(uri);
+    final byKey = <String, HelloAssoRegistrant>{};
+    for (final entry in rows) {
+      final map = Map<String, dynamic>.from(entry as Map);
+      final state = '${map['state'] ?? ''}'.toLowerCase();
+      if (state.contains('cancel')) continue;
+      final user = Map<String, dynamic>.from((map['user'] as Map?) ?? const {});
+      final firstName =
+          '${user['firstName'] ?? user['firstname'] ?? ''}'.trim();
+      final lastName = '${user['lastName'] ?? user['lastname'] ?? ''}'.trim();
+      if (firstName.isEmpty && lastName.isEmpty) continue;
+      final email = _emailFromCustomFields(map);
+      final itemId = '${map['id'] ?? ''}';
+      final key = email.isNotEmpty
+          ? email
+          : _playerNameFromParts(firstName, lastName,
+              itemId.isEmpty ? makeId('helloasso') : itemId);
+      byKey[key] = HelloAssoRegistrant(
+        firstName: firstName,
+        lastName: lastName,
+        email: email,
+        helloassoUserId: itemId,
+      );
+    }
+    return _sortedRegistrants(byKey.values);
+  }
+
+  Future<List<HelloAssoRegistrant>> _fetchPaidOrderPayers(
+      HelloAssoEvent event) async {
     final uri = Uri.parse(
             '${settings.apiBaseUrl}/organizations/${Uri.encodeComponent(settings.organizationSlug)}/forms/${event.formType}/${Uri.encodeComponent(event.formSlug)}/orders')
         .replace(queryParameters: {
@@ -120,14 +168,53 @@ class HelloAssoClient {
         helloassoUserId: '${payer['id'] ?? payer['userId'] ?? ''}',
       );
     }
-    return byEmail.values.toList()
-      ..sort((a, b) => _playerNameFromParts(a.firstName, a.lastName, a.email)
-          .compareTo(_playerNameFromParts(b.firstName, b.lastName, b.email)));
+    return _sortedRegistrants(byEmail.values);
+  }
+
+  List<HelloAssoRegistrant> _sortedRegistrants(
+          Iterable<HelloAssoRegistrant> registrants) =>
+      registrants.toList()
+        ..sort((a, b) => _playerNameFromParts(a.firstName, a.lastName, a.email)
+            .compareTo(_playerNameFromParts(b.firstName, b.lastName, b.email)));
+
+  String _emailFromCustomFields(Map<String, dynamic> item) {
+    final customFields = (item['customFields'] as List?) ?? const [];
+    for (final field in customFields) {
+      if (field is! Map) continue;
+      final name = '${field['name'] ?? ''}'.toLowerCase();
+      final answer = '${field['answer'] ?? ''}'.trim().toLowerCase();
+      if ((name.contains('email') ||
+              name.contains('mail') ||
+              name.contains('courriel')) &&
+          answer.contains('@')) {
+        return answer;
+      }
+    }
+    return '';
   }
 
   String _defaultEventUrl(String formSlug) {
     return settings.isSandbox
         ? 'https://www.helloasso-sandbox.com/associations/${settings.organizationSlug}/evenements/$formSlug'
         : 'https://www.helloasso.com/associations/${settings.organizationSlug}/evenements/$formSlug';
+  }
+
+  String _errorDetails(String body) {
+    if (body.trim().isEmpty) return '';
+    try {
+      final data = jsonDecode(body);
+      if (data is Map<String, dynamic>) {
+        final message =
+            '${data['message'] ?? data['error_description'] ?? data['error'] ?? ''}'
+                .trim();
+        if (message.isNotEmpty) return ' : $message';
+      }
+    } catch (_) {
+      final compact = body.trim().replaceAll(RegExp(r'\s+'), ' ');
+      if (compact.isNotEmpty) {
+        return ' : ${compact.length > 160 ? '${compact.substring(0, 160)}...' : compact}';
+      }
+    }
+    return '';
   }
 }

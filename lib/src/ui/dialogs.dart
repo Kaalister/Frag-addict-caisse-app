@@ -223,7 +223,9 @@ Future<void> showCreateSessionDialog(
                       ],
                       onChanged: (event) => setState(() {
                         selectedEvent = event;
-                        if (event != null) field.text = event.name;
+                        if (event != null) {
+                          field.text = event.name;
+                        }
                       }),
                     ),
                 ],
