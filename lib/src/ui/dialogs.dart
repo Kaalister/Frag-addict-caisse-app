@@ -164,11 +164,16 @@ Future<void> showCreateSessionDialog(
   var selectedEventEnabled = false;
   HelloAssoEvent? selectedEvent;
   var events = <HelloAssoEvent>[];
+  var eventsFetchStarted = false;
   final value = await showDialog<String>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) {
-        if (loadingEvents && events.isEmpty && helloAssoError.isEmpty) {
+        if (loadingEvents &&
+            !eventsFetchStarted &&
+            events.isEmpty &&
+            helloAssoError.isEmpty) {
+          eventsFetchStarted = true;
           controller.fetchHelloAssoEvents().then((loaded) {
             if (!context.mounted) return;
             setState(() {

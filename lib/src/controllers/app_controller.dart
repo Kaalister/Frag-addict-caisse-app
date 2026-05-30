@@ -4,6 +4,9 @@ class AppController extends ChangeNotifier {
   final LocalDatabase _database = LocalDatabase();
   final FirebaseSyncService _syncService = FirebaseSyncService();
   final SecureSettingsService _secureSettings = SecureSettingsService();
+  final HelloAssoImportService _helloAssoImport = HelloAssoImportService();
+  final MealService _mealService = MealService();
+  final StockService _stockService = StockService();
 
   bool loading = true;
   bool syncing = false;
@@ -50,7 +53,7 @@ class AppController extends ChangeNotifier {
   bool get canCheckout =>
       selectedPlayer != null && hasPendingPayment && cartStockShortages.isEmpty;
   List<StockShortage> get cartStockShortages =>
-      _stockShortages(_cartStockRequirements());
+      _stockService.shortages(_stockService.cartRequirements(cart, articles));
   List<String> get categories => ['TOUS', ...articleCategories];
   List<Article> get visibleArticles => categoryFilter == 'TOUS'
       ? articles
@@ -143,31 +146,34 @@ class AppController extends ChangeNotifier {
     syncing = true;
     syncStatus = 'Synchronisation en cours';
     notifyListeners();
-    final result =
-        await _syncService.synchronize(_database, allowPull: allowRemotePull);
-    _applySyncResult(result);
-    if (reloadAfterPull && result.action == FirebaseSyncAction.pulled) {
-      sessions = await _database.loadSessions();
-      final activeSessionId = await _database.loadActiveSessionId();
-      activeSession =
-          sessions.where((s) => s.id == activeSessionId).firstOrNull ??
-              sessions.firstOrNull;
-      allPlayers = await _database.loadAllPlayers();
-      final storedArticles = await _database.loadArticles();
-      articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
-      final storedCategories = await _database.loadArticleCategories();
-      _setArticleCategories(storedCategories.isEmpty
-          ? defaultArticleCategories()
-          : storedCategories);
-      final storedHelloAssoSettings = await _database.loadHelloAssoSettings();
-      helloAssoSettings =
-          await _secureSettings.loadHelloAssoSettings(storedHelloAssoSettings);
-      await _loadActiveSessionState();
-      await refreshSessionSales();
+    try {
+      final result =
+          await _syncService.synchronize(_database, allowPull: allowRemotePull);
+      _applySyncResult(result);
+      if (reloadAfterPull && result.action == FirebaseSyncAction.pulled) {
+        sessions = await _database.loadSessions();
+        final activeSessionId = await _database.loadActiveSessionId();
+        activeSession =
+            sessions.where((s) => s.id == activeSessionId).firstOrNull ??
+                sessions.firstOrNull;
+        allPlayers = await _database.loadAllPlayers();
+        final storedArticles = await _database.loadArticles();
+        articles = storedArticles.isEmpty ? defaultArticles() : storedArticles;
+        final storedCategories = await _database.loadArticleCategories();
+        _setArticleCategories(storedCategories.isEmpty
+            ? defaultArticleCategories()
+            : storedCategories);
+        final storedHelloAssoSettings = await _database.loadHelloAssoSettings();
+        helloAssoSettings = await _secureSettings
+            .loadHelloAssoSettings(storedHelloAssoSettings);
+        await _loadActiveSessionState();
+        await refreshSessionSales();
+      }
+      return result;
+    } finally {
+      syncing = false;
+      notifyListeners();
     }
-    syncing = false;
-    notifyListeners();
-    return result;
   }
 
   Future<FirebaseSyncResult> connectFirebaseUser() async {
@@ -374,12 +380,11 @@ class AppController extends ChangeNotifier {
     if (!helloAssoSettings.isConfigured) {
       throw Exception('Configuration HelloAsso incomplète');
     }
-    await HelloAssoClient(helloAssoSettings).fetchEvents();
+    await _helloAssoImport.fetchEvents(helloAssoSettings);
   }
 
   Future<List<HelloAssoEvent>> fetchHelloAssoEvents() async {
-    if (!helloAssoSettings.isConfigured) return const [];
-    return HelloAssoClient(helloAssoSettings).fetchEvents();
+    return _helloAssoImport.fetchEvents(helloAssoSettings);
   }
 
   Future<void> createSession(String name,
@@ -387,8 +392,8 @@ class AppController extends ChangeNotifier {
     await persist();
     final registrants = helloassoEvent == null
         ? const <HelloAssoRegistrant>[]
-        : await HelloAssoClient(helloAssoSettings)
-            .fetchPaidOrderPayers(helloassoEvent);
+        : await _helloAssoImport.fetchRegistrants(
+            helloAssoSettings, helloassoEvent);
     final syncedAt = helloassoEvent == null ? null : DateTime.now();
     final created = await _database.createSession(
       name.trim().isEmpty ? (helloassoEvent?.name ?? 'Nouvelle partie') : name,
@@ -400,9 +405,22 @@ class AppController extends ChangeNotifier {
     players = [];
     meals = [];
     for (final registrant in registrants) {
-      final player = _attachHelloAssoRegistrant(registrant);
+      final player = _helloAssoImport.attachRegistrant(
+        registrant: registrant,
+        allPlayers: allPlayers,
+        sessionPlayers: players,
+      );
       if (registrant.hasMeal) {
-        _attachHelloAssoMeal(player, registrant);
+        final mealArticle = mealArticles.firstOrNull;
+        if (mealArticle != null) {
+          meals.add(_mealService.helloAssoMeal(
+            player: player,
+            registrant: registrant,
+            mealArticle: mealArticle,
+            drinkArticle: drinkArticles.firstOrNull,
+            snackArticle: snackArticles.firstOrNull,
+          ));
+        }
       }
     }
     sales = [];
@@ -417,54 +435,6 @@ class AppController extends ChangeNotifier {
     categoryFilter = 'TOUS';
     notifyListeners();
     await persist();
-  }
-
-  Player _attachHelloAssoRegistrant(HelloAssoRegistrant registrant) {
-    final cleanEmail = registrant.email.trim().toLowerCase();
-    final cleanName = _playerNameFromParts(
-        registrant.firstName,
-        registrant.lastName,
-        cleanEmail.isEmpty ? 'Participant HelloAsso' : cleanEmail);
-    final existing = cleanEmail.isNotEmpty
-        ? allPlayers
-            .where((p) => p.email.trim().toLowerCase() == cleanEmail)
-            .firstOrNull
-        : allPlayers
-            .where((p) => p.name.toLowerCase() == cleanName.toLowerCase())
-            .firstOrNull;
-    final player = existing ??
-        Player(id: makeId('player'), name: cleanName, type: 'public');
-    player.firstName = registrant.firstName.trim();
-    player.lastName = registrant.lastName.trim();
-    player.email = cleanEmail;
-    player.helloassoUserId = registrant.helloassoUserId;
-    player.name = cleanName;
-    if (existing == null) allPlayers.add(player);
-    if (!players.any((p) => p.id == player.id)) players.add(player);
-    return player;
-  }
-
-  void _attachHelloAssoMeal(Player player, HelloAssoRegistrant registrant) {
-    final mealArticle = mealArticles.firstOrNull;
-    if (mealArticle == null) return;
-    final now = DateTime.now();
-    final mealLabel = registrant.mealLabel.trim();
-    meals.add(MealOrder(
-      id: makeId('meal'),
-      playerId: player.id,
-      playerName: player.name,
-      playerType: player.type,
-      source: 'helloasso',
-      status: 'planned',
-      mealArticleId: mealArticle.id,
-      drinkArticleId: drinkArticles.firstOrNull?.id ?? '',
-      snackArticleId: snackArticles.firstOrNull?.id ?? '',
-      formula: 'Standard',
-      options: const [],
-      note: mealLabel.isEmpty ? '' : 'HelloAsso : $mealLabel',
-      createdAt: now,
-      updatedAt: now,
-    ));
   }
 
   Future<void> switchSession(String sessionId) async {
@@ -674,7 +644,8 @@ class AppController extends ChangeNotifier {
       session: activeSession?.id ?? '',
       createdAt: DateTime.now(),
     );
-    for (final entry in _cartStockRequirements().entries) {
+    for (final entry
+        in _stockService.cartRequirements(cart, articles).entries) {
       _applyStockDelta(
         entry.key,
         -entry.value,
@@ -702,31 +673,22 @@ class AppController extends ChangeNotifier {
     required String note,
     String payment = '',
   }) async {
-    final now = DateTime.now();
-    final saleId = source == 'onsite' ? makeId('sale') : '';
-    final meal = MealOrder(
-      id: makeId('meal'),
-      playerId: player.id,
-      playerName: player.name,
-      playerType: player.type,
+    final meal = _mealService.createMealOrder(
+      player: player,
       source: source,
       status: status,
-      saleId: saleId,
-      payment: payment,
       mealArticleId: mealArticleId,
       drinkArticleId: drinkArticleId,
       snackArticleId: snackArticleId,
       formula: formula,
-      options: List<String>.of(options),
-      note: note.trim(),
-      createdAt: now,
-      preparedAt: status == 'prepared' || status == 'served' ? now : null,
-      servedAt: status == 'served' ? now : null,
-      updatedAt: now,
+      options: options,
+      note: note,
+      payment: payment,
     );
     _applyMealStockTransition(null, meal);
     if (meal.isOnsite) {
-      sales.add(_saleForMeal(meal, player));
+      sales.add(_mealService.saleForMeal(meal, player, articles,
+          sessionId: activeSession?.id ?? ''));
     }
     meals.add(meal);
     notifyListeners();
@@ -734,16 +696,17 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> updateMeal(MealOrder current, MealOrder updated) async {
-    _applyMealStockTransition(current, updated);
     final index = meals.indexWhere((meal) => meal.id == current.id);
     if (index < 0) return;
+    _applyMealStockTransition(meals[index], updated);
     meals[index] = updated;
     if (updated.isOnsite && updated.saleId.isNotEmpty) {
       final saleIndex = sales.indexWhere((sale) => sale.id == updated.saleId);
       final player =
           players.where((entry) => entry.id == updated.playerId).firstOrNull;
       if (saleIndex >= 0 && player != null) {
-        sales[saleIndex] = _saleForMeal(updated, player,
+        sales[saleIndex] = _mealService.saleForMeal(updated, player, articles,
+            sessionId: activeSession?.id ?? '',
             createdAt: sales[saleIndex].createdAt);
       }
     }
@@ -776,127 +739,31 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> cancelMeal(MealOrder meal) async {
-    if (meal.status == 'cancelled') return;
-    final cancelled = meal.copyWith(
-        status: 'cancelled', saleId: '', updatedAt: DateTime.now());
-    _applyMealStockTransition(meal, cancelled);
     final index = meals.indexWhere((entry) => entry.id == meal.id);
-    if (index >= 0) meals[index] = cancelled;
-    if (meal.saleId.isNotEmpty) {
-      sales.removeWhere((sale) => sale.id == meal.saleId);
+    if (index < 0) return;
+    final current = meals[index];
+    if (current.status == 'cancelled') return;
+    final cancelled = current.copyWith(
+        status: 'cancelled', saleId: '', updatedAt: DateTime.now());
+    _applyMealStockTransition(current, cancelled);
+    meals[index] = cancelled;
+    if (current.saleId.isNotEmpty) {
+      sales.removeWhere((sale) => sale.id == current.saleId);
     }
     notifyListeners();
     await persist();
   }
 
-  Sale _saleForMeal(MealOrder meal, Player player, {DateTime? createdAt}) {
-    final article =
-        articles.where((entry) => entry.id == meal.mealArticleId).firstOrNull;
-    if (article == null) {
-      throw StateError('Article repas introuvable');
-    }
-    final price = article.priceFor(player.isMember);
-    return Sale(
-      id: meal.saleId,
-      playerId: player.id,
-      playerName: player.name,
-      playerType: player.type,
-      tariff: player.isMember ? 'adherent' : 'public',
-      items: [
-        SaleItem(
-          articleId: article.id,
-          name: article.name,
-          icon: article.icon,
-          type: article.type,
-          quantity: 1,
-          price: price,
-          publicPrice: article.price,
-          memberPrice: article.memberPrice,
-        ),
-      ],
-      totalArticles: price,
-      donation: 0,
-      payment: meal.payment,
-      session: activeSession?.id ?? '',
-      createdAt: createdAt ?? DateTime.now(),
-    );
-  }
-
   void _applyMealStockTransition(MealOrder? previous, MealOrder next) {
-    final oldItems = previous != null && previous.consumesStock
-        ? previous.stockItems
-        : <String, int>{};
-    final newItems = next.consumesStock ? next.stockItems : <String, int>{};
-    final ids = {...oldItems.keys, ...newItems.keys};
-    for (final id in ids) {
-      final article = articles.where((entry) => entry.id == id).firstOrNull;
-      if (article == null) continue;
-      final delta = (oldItems[id] ?? 0) - (newItems[id] ?? 0);
-      if (delta < 0 && article.stock < -delta) {
-        throw StateError('Stock insuffisant pour ${article.name}');
-      }
-    }
-    for (final id in ids) {
-      final article = articles.where((entry) => entry.id == id).firstOrNull;
-      if (article == null) continue;
-      final delta = (oldItems[id] ?? 0) - (newItems[id] ?? 0);
-      _applyStockDelta(
-        article,
-        delta,
-        movementType: 'meal',
-        saleId: next.saleId.isEmpty ? null : next.saleId,
-        reason: 'Repas ${next.id}',
-      );
-    }
-  }
-
-  Map<Article, int> _cartStockRequirements() {
-    final result = <Article, int>{};
-    for (final item in cart) {
-      final article =
-          articles.where((entry) => entry.id == item.articleId).firstOrNull;
-      if (article == null) continue;
-      _mergeRequirements(result, _articleConsumption(article, item.quantity));
-    }
-    return result;
-  }
-
-  Map<Article, int> _saleStockRequirements(Sale sale) {
-    final result = <Article, int>{};
-    for (final item in sale.items) {
-      final article = articles
-          .where(
-              (entry) => entry.id == item.articleId || entry.name == item.name)
-          .firstOrNull;
-      if (article != null) {
-        _mergeRequirements(result, _articleConsumption(article, item.quantity));
-      }
-    }
-    return result;
-  }
-
-  Map<Article, int> _articleConsumption(Article article, int quantity) {
-    final result = <Article, int>{};
-    if (article.tracksStock) result[article] = quantity;
-    return result;
-  }
-
-  void _mergeRequirements(Map<Article, int> target, Map<Article, int> added) {
-    for (final entry in added.entries) {
-      target[entry.key] = (target[entry.key] ?? 0) + entry.value;
-    }
-  }
-
-  List<StockShortage> _stockShortages(Map<Article, int> requirements) {
-    return [
-      for (final entry in requirements.entries)
-        if (entry.key.stock < entry.value)
-          StockShortage(
-            article: entry.key,
-            requiredQuantity: entry.value,
-            availableQuantity: entry.key.stock,
-          ),
-    ];
+    final movements = _mealService.stockTransition(
+      previous,
+      next,
+      articles: articles,
+      stockService: _stockService,
+      sessionId: activeSession?.id,
+    );
+    pendingStockMovements.addAll(movements);
+    stockMovements.addAll(movements);
   }
 
   void _applyStockDelta(
@@ -906,27 +773,15 @@ class AppController extends ChangeNotifier {
     required String reason,
     String? saleId,
   }) {
-    if (delta == 0) return;
-    final before = article.stock;
-    final after = before + delta;
-    if (after < 0) {
-      throw StateError('Stock insuffisant pour ${article.name}');
-    }
-    article.stock = after;
-    final sessionId = activeSession?.id;
-    if (sessionId != null) {
-      final movement = StockMovement(
-        id: makeId('stock'),
-        sessionId: sessionId,
-        articleId: article.id,
-        saleId: saleId,
-        movementType: movementType,
-        quantityDelta: delta,
-        stockBefore: before,
-        stockAfter: after,
-        reason: reason,
-        createdAt: DateTime.now(),
-      );
+    final movement = _stockService.applyDelta(
+      article,
+      delta,
+      sessionId: activeSession?.id,
+      movementType: movementType,
+      reason: reason,
+      saleId: saleId,
+    );
+    if (movement != null) {
       pendingStockMovements.add(movement);
       stockMovements.add(movement);
     }
@@ -961,7 +816,8 @@ class AppController extends ChangeNotifier {
   }
 
   void _restoreStock(Sale sale) {
-    for (final entry in _saleStockRequirements(sale).entries) {
+    for (final entry
+        in _stockService.saleRequirements(sale, articles).entries) {
       _applyStockDelta(
         entry.key,
         entry.value,
@@ -1052,10 +908,45 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> deleteArticle(Article article) async {
+    final reference = _articleDeletionBlocker(article);
+    if (reference != null) {
+      throw StateError(
+          'Impossible de supprimer ${article.name} : article utilisé dans $reference');
+    }
+    final storedReference = await _database.findArticleReference(article.id);
+    if (storedReference != null) {
+      throw StateError(
+          'Impossible de supprimer ${article.name} : article utilisé dans $storedReference');
+    }
     articles.remove(article);
     cart.removeWhere((item) => item.articleId == article.id);
     notifyListeners();
     await persist();
+  }
+
+  String? _articleDeletionBlocker(Article article) {
+    final articleId = article.id;
+    if (cart.any((item) => item.articleId == articleId)) {
+      return 'le panier courant';
+    }
+    if (sales
+        .any((sale) => sale.items.any((item) => item.articleId == articleId))) {
+      return 'les ventes de la session';
+    }
+    if (salesBySession.values.any((sessionSales) => sessionSales.any(
+        (sale) => sale.items.any((item) => item.articleId == articleId)))) {
+      return 'l’historique des ventes';
+    }
+    if (meals.any((meal) =>
+        meal.mealArticleId == articleId ||
+        meal.drinkArticleId == articleId ||
+        meal.snackArticleId == articleId)) {
+      return 'les repas de la session';
+    }
+    if (stockMovements.any((movement) => movement.articleId == articleId)) {
+      return 'les mouvements de stock';
+    }
+    return null;
   }
 
   Future<void> resetSales() async {

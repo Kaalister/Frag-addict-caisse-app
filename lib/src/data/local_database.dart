@@ -249,26 +249,40 @@ class LocalDatabase {
     final oldSaleItems = <Map<String, Object?>>[];
     final oldCashLines = <Map<String, Object?>>[];
 
-    try {
-      final setting = await db.query('app_settings',
-          columns: ['value'],
-          where: 'key = ?',
-          whereArgs: ['session'],
-          limit: 1);
-      if (setting.isNotEmpty &&
-          '${setting.first['value'] ?? ''}'.trim().isNotEmpty) {
-        sessionName = '${setting.first['value']}';
+    Future<List<Map<String, Object?>>> readLegacyRows(
+      String table, {
+      List<String>? columns,
+      String? where,
+      List<Object?>? whereArgs,
+      String? orderBy,
+      int? limit,
+    }) async {
+      try {
+        return await db.query(table,
+            columns: columns,
+            where: where,
+            whereArgs: whereArgs,
+            orderBy: orderBy,
+            limit: limit);
+      } catch (_) {
+        return const [];
       }
-      oldPlayers.addAll(await db.query('players', where: 'deleted_at IS NULL'));
-      oldArticles.addAll(await db.query('articles',
-          where: 'is_active = 1', orderBy: 'sort_order ASC'));
-      oldSales.addAll(await db.query('sales',
-          where: "status = 'active'", orderBy: 'created_at ASC'));
-      oldSaleItems.addAll(await db.query('sale_items', orderBy: 'id ASC'));
-      oldCashLines.addAll(await db.query('cash_count_lines'));
-    } catch (_) {
-      // Best-effort migration: if the old schema is inconsistent, recreate a clean v2 database.
     }
+
+    final setting = await readLegacyRows('app_settings',
+        columns: ['value'], where: 'key = ?', whereArgs: ['session'], limit: 1);
+    if (setting.isNotEmpty &&
+        '${setting.first['value'] ?? ''}'.trim().isNotEmpty) {
+      sessionName = '${setting.first['value']}';
+    }
+    oldPlayers
+        .addAll(await readLegacyRows('players', where: 'deleted_at IS NULL'));
+    oldArticles.addAll(await readLegacyRows('articles',
+        where: 'is_active = 1', orderBy: 'sort_order ASC'));
+    oldSales.addAll(await readLegacyRows('sales',
+        where: "status = 'active'", orderBy: 'created_at ASC'));
+    oldSaleItems.addAll(await readLegacyRows('sale_items', orderBy: 'id ASC'));
+    oldCashLines.addAll(await readLegacyRows('cash_count_lines'));
 
     await _dropAll(db);
     await _create(db, newVersion);
@@ -857,6 +871,35 @@ class LocalDatabase {
         (row['denomination'] as num).toDouble().toString():
             (row['quantity'] as num).round(),
     };
+  }
+
+  Future<String?> findArticleReference(String articleId) async {
+    final db = await database;
+    Future<bool> exists(
+        String table, String where, List<Object?> whereArgs) async {
+      final count = Sqflite.firstIntValue(
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM $table WHERE $where',
+              whereArgs,
+            ),
+          ) ??
+          0;
+      return count > 0;
+    }
+
+    if (await exists(
+        'meal_orders',
+        'meal_article_id = ? OR drink_article_id = ? OR snack_article_id = ?',
+        [articleId, articleId, articleId])) {
+      return 'les repas';
+    }
+    if (await exists('sale_items', 'article_id = ?', [articleId])) {
+      return 'l’historique des ventes';
+    }
+    if (await exists('stock_movements', 'article_id = ?', [articleId])) {
+      return 'les mouvements de stock';
+    }
+    return null;
   }
 
   Future<void> saveAll(AppController state, {bool markUpdated = true}) async {

@@ -80,7 +80,16 @@ class ArticlesPricePage extends StatelessWidget {
                     onDelete: () async {
                       if (await confirm(
                           context, 'Supprimer ${article.name} ?')) {
-                        await controller.deleteArticle(article);
+                        try {
+                          await controller.deleteArticle(article);
+                        } catch (error) {
+                          if (context.mounted) {
+                            final message = '$error'
+                                .replaceFirst('Bad state: ', '')
+                                .replaceFirst('Exception: ', '');
+                            snack(context, message);
+                          }
+                        }
                       }
                     },
                   ),
