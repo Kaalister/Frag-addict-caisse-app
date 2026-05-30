@@ -582,12 +582,16 @@ class HelloAssoRegistrant {
     required this.lastName,
     required this.email,
     this.helloassoUserId = '',
+    this.hasMeal = false,
+    this.mealLabel = '',
   });
 
   final String firstName;
   final String lastName;
   final String email;
   final String helloassoUserId;
+  final bool hasMeal;
+  final String mealLabel;
 }
 
 List<Article> defaultArticles() => [

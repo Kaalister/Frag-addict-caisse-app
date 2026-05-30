@@ -398,11 +398,14 @@ class AppController extends ChangeNotifier {
     sessions = await _database.loadSessions();
     activeSession = created;
     players = [];
+    meals = [];
     for (final registrant in registrants) {
-      _attachHelloAssoRegistrant(registrant);
+      final player = _attachHelloAssoRegistrant(registrant);
+      if (registrant.hasMeal) {
+        _attachHelloAssoMeal(player, registrant);
+      }
     }
     sales = [];
-    meals = [];
     stockMovements = [];
     salesBySession[created.id] = [];
     cashStart = {};
@@ -416,7 +419,7 @@ class AppController extends ChangeNotifier {
     await persist();
   }
 
-  void _attachHelloAssoRegistrant(HelloAssoRegistrant registrant) {
+  Player _attachHelloAssoRegistrant(HelloAssoRegistrant registrant) {
     final cleanEmail = registrant.email.trim().toLowerCase();
     final cleanName = _playerNameFromParts(
         registrant.firstName,
@@ -438,6 +441,30 @@ class AppController extends ChangeNotifier {
     player.name = cleanName;
     if (existing == null) allPlayers.add(player);
     if (!players.any((p) => p.id == player.id)) players.add(player);
+    return player;
+  }
+
+  void _attachHelloAssoMeal(Player player, HelloAssoRegistrant registrant) {
+    final mealArticle = mealArticles.firstOrNull;
+    if (mealArticle == null) return;
+    final now = DateTime.now();
+    final mealLabel = registrant.mealLabel.trim();
+    meals.add(MealOrder(
+      id: makeId('meal'),
+      playerId: player.id,
+      playerName: player.name,
+      playerType: player.type,
+      source: 'helloasso',
+      status: 'planned',
+      mealArticleId: mealArticle.id,
+      drinkArticleId: drinkArticles.firstOrNull?.id ?? '',
+      snackArticleId: snackArticles.firstOrNull?.id ?? '',
+      formula: 'Standard',
+      options: const [],
+      note: mealLabel.isEmpty ? '' : 'HelloAsso : $mealLabel',
+      createdAt: now,
+      updatedAt: now,
+    ));
   }
 
   Future<void> switchSession(String sessionId) async {

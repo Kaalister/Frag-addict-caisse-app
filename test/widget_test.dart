@@ -122,6 +122,42 @@ void main() {
     expect(row.stockInitial, 10);
   });
 
+  test('planned HelloAsso meal does not consume stock before preparation', () {
+    final controller = AppController()
+      ..articles = [
+        Article(
+          id: 'repas',
+          category: 'REPAS',
+          type: 'standard',
+          icon: '',
+          name: 'Repas',
+          price: 10,
+          memberPrice: 9,
+          stock: 9,
+          threshold: 1,
+        ),
+      ]
+      ..meals = [
+        MealOrder(
+          id: 'meal-1',
+          playerId: 'player-1',
+          playerName: 'Joueur',
+          playerType: 'public',
+          source: 'helloasso',
+          status: 'planned',
+          mealArticleId: 'repas',
+          formula: 'Standard',
+          createdAt: DateTime(2026, 5, 25),
+        ),
+      ];
+
+    final row = kpiRows(controller).single;
+
+    expect(row.mealUsed, 0);
+    expect(row.outgoing, 0);
+    expect(row.stockInitial, 9);
+  });
+
   test('location checkout never consumes stock', () {
     final player = Player(id: 'player-1', name: 'Joueur', type: 'public');
     final controller = AppController()

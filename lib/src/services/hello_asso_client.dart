@@ -118,17 +118,24 @@ class HelloAssoClient {
       final lastName = '${user['lastName'] ?? user['lastname'] ?? ''}'.trim();
       if (firstName.isEmpty && lastName.isEmpty) continue;
       final email = _emailFromCustomFields(map);
+      final mealLabel = _mealLabelFromItem(map);
       final itemId = '${map['id'] ?? ''}';
       final key = email.isNotEmpty
           ? email
           : _playerNameFromParts(firstName, lastName,
               itemId.isEmpty ? makeId('helloasso') : itemId);
-      byKey[key] = HelloAssoRegistrant(
+      final registrant = HelloAssoRegistrant(
         firstName: firstName,
         lastName: lastName,
         email: email,
         helloassoUserId: itemId,
+        hasMeal: mealLabel.isNotEmpty,
+        mealLabel: mealLabel,
       );
+      final existing = byKey[key];
+      if (existing == null || (!existing.hasMeal && registrant.hasMeal)) {
+        byKey[key] = registrant;
+      }
     }
     return _sortedRegistrants(byKey.values);
   }
@@ -191,6 +198,33 @@ class HelloAssoClient {
       }
     }
     return '';
+  }
+
+  String _mealLabelFromItem(Map<String, dynamic> item) {
+    final candidates = [
+      '${item['name'] ?? ''}',
+      '${item['tierDescription'] ?? ''}',
+      '${item['comment'] ?? ''}',
+    ];
+    final options = (item['options'] as List?) ?? const [];
+    for (final option in options) {
+      if (option is! Map) continue;
+      candidates.add('${option['name'] ?? ''}');
+      candidates.add('${option['tierName'] ?? ''}');
+    }
+    return candidates.firstWhere((value) => _containsMeal(value),
+        orElse: () => '');
+  }
+
+  bool _containsMeal(String value) {
+    final normalized = value
+        .toLowerCase()
+        .replaceAll(RegExp('[éèêë]'), 'e')
+        .replaceAll(RegExp('[àâä]'), 'a')
+        .replaceAll(RegExp('[îï]'), 'i')
+        .replaceAll(RegExp('[ôö]'), 'o')
+        .replaceAll(RegExp('[ùûü]'), 'u');
+    return normalized.contains('repas') || normalized.contains('meal');
   }
 
   String _defaultEventUrl(String formSlug) {
