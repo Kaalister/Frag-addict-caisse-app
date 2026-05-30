@@ -27,12 +27,7 @@ class _MealsPageState extends State<MealsPage> {
         .length;
     final normalizedQuery = query.trim().toLowerCase();
     final visible = controller.meals.where((meal) {
-      if (filter == 'pending' &&
-          meal.status != 'planned' &&
-          meal.status != 'prepared') {
-        return false;
-      }
-      if (filter != 'all' && filter != 'pending' && meal.status != filter) {
+      if (filter != 'all' && meal.status != filter) {
         return false;
       }
       return normalizedQuery.isEmpty ||
@@ -97,12 +92,11 @@ class _MealsPageState extends State<MealsPage> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _mealFilterChip('À remettre', 'pending'),
+                  _mealFilterChip('Tous', 'all'),
                   _mealFilterChip('À préparer', 'planned'),
-                  _mealFilterChip('Préparés', 'prepared'),
+                  _mealFilterChip('À remettre', 'prepared'),
                   _mealFilterChip('Servis', 'served'),
                   _mealFilterChip('Annulés', 'cancelled'),
-                  _mealFilterChip('Tous', 'all'),
                 ],
               ),
             ],
