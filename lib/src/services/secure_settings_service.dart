@@ -2,10 +2,28 @@ part of '../../main.dart';
 
 class SecureSettingsService {
   static const _helloAssoSecretPrefix = 'helloasso_client_secret';
+  static const _firebaseSettingsKey = 'firebase_settings';
   static const _storage = FlutterSecureStorage();
 
   String get _helloAssoSecretKey =>
-      '${_helloAssoSecretPrefix}_${FirebaseAuth.instance.currentUser?.uid ?? 'local'}';
+      '${_helloAssoSecretPrefix}_${FirebaseBootstrap.currentUser?.uid ?? 'local'}';
+
+  Future<FirebaseSettings?> loadFirebaseSettings() async {
+    try {
+      final value = await _storage.read(key: _firebaseSettingsKey);
+      if (value == null || value.trim().isEmpty) return null;
+      return FirebaseSettings.fromJson(
+          Map<String, dynamic>.from(jsonDecode(value) as Map));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveFirebaseSettings(FirebaseSettings settings) =>
+      _storage.write(key: _firebaseSettingsKey, value: jsonEncode(settings));
+
+  Future<void> clearFirebaseSettings() =>
+      _storage.delete(key: _firebaseSettingsKey);
 
   Future<HelloAssoSettings> loadHelloAssoSettings(
       HelloAssoSettings storedSettings) async {

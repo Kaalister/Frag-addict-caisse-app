@@ -1,9 +1,39 @@
-import 'package:frags_addicts_caisse/main.dart';
+import 'dart:convert';
+
+import 'package:tilly/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _MemoryAppController extends AppController {
+  _MemoryAppController() {
+    loading = false;
+    activeSession = SessionRecord(
+      id: 'session-test',
+      name: 'Session test',
+      eventDate: DateTime(2026, 7, 16),
+    );
+  }
+
+  @override
+  Future<void> setAssociationName(String value) async {
+    appSettings = appSettings.copyWith(associationName: value.trim());
+    notifyListeners();
+  }
+}
 
 void main() {
   test('money formats French euro display', () {
     expect(money(12.5), '12,50 €');
+  });
+
+  test('default catalog starts empty with retained categories', () {
+    expect(defaultArticles(), isEmpty);
+    expect(defaultArticleCategories(), [
+      'BOISSONS',
+      'REPAS',
+      'GOODIES',
+      'LOCATION',
+    ]);
   });
 
   test('prepared meal inclusions are counted as stock outgoing', () {
@@ -161,11 +191,32 @@ void main() {
   test('location checkout never consumes stock', () {
     final player = Player(id: 'player-1', name: 'Joueur', type: 'public');
     final controller = AppController()
-      ..articles = defaultArticles()
+      ..articles = [
+        Article(
+          id: 'billes',
+          category: 'GOODIES',
+          type: 'standard',
+          icon: '',
+          name: 'Billes',
+          price: 3,
+          memberPrice: 2.5,
+          stock: 0,
+          threshold: 0,
+        ),
+        Article(
+          id: 'location',
+          category: 'LOCATION',
+          type: 'location',
+          icon: '',
+          name: 'Location réplique',
+          price: 15,
+          memberPrice: 12,
+          stock: 0,
+          threshold: 0,
+        ),
+      ]
       ..players = [player]
       ..allPlayers = [player];
-    controller.articles.firstWhere((article) => article.id == 'billes').stock =
-        0;
 
     controller.selectPlayer(player);
     controller.addToCart(
@@ -213,7 +264,7 @@ void main() {
 
   test('HelloAsso portable settings exclude the client secret', () {
     const settings = HelloAssoSettings(
-      organizationSlug: 'frags',
+      organizationSlug: 'tilly',
       clientId: 'client',
       clientSecret: 'private-secret',
     );
@@ -222,6 +273,81 @@ void main() {
 
     expect(exported.containsKey('clientSecret'), isFalse);
     expect(settings.withoutSecret().clientSecret, isEmpty);
+  });
+
+  test('app settings persist the primary color', () {
+    const settings = AppSettings(primaryColorValue: 0xFFFF6B35);
+    final restored = AppSettings.fromJson(settings.toJson());
+
+    expect(restored.primaryColor.toARGB32(), 0xFFFF6B35);
+  });
+
+  test('Firebase settings round-trip and build runtime options', () {
+    const settings = FirebaseSettings(
+      apiKey: 'api-key',
+      appId: 'app-id',
+      messagingSenderId: 'sender-id',
+      projectId: 'project-id',
+      authDomain: 'project.firebaseapp.com',
+    );
+
+    final restored = FirebaseSettings.fromJson(settings.toJson());
+    final options = restored.toOptions();
+
+    expect(restored.isConfigured, isTrue);
+    expect(options.apiKey, 'api-key');
+    expect(options.projectId, 'project-id');
+    expect(options.authDomain, 'project.firebaseapp.com');
+  });
+
+  test('Firebase settings require the four core identifiers', () {
+    expect(const FirebaseSettings().isConfigured, isFalse);
+    expect(
+        const FirebaseSettings(
+          apiKey: 'api-key',
+          appId: 'app-id',
+          messagingSenderId: 'sender-id',
+        ).isConfigured,
+        isFalse);
+  });
+
+  test('Firebase web configuration can be pasted as a single block', () {
+    final settings = parseFirebaseSettings('''
+      const firebaseConfig = {
+        apiKey: "api-key",
+        authDomain: "project.firebaseapp.com",
+        projectId: "project-id",
+        storageBucket: "project.firebasestorage.app",
+        messagingSenderId: "sender-id",
+        appId: "app-id"
+      };
+    ''');
+
+    expect(settings.isConfigured, isTrue);
+    expect(settings.projectId, 'project-id');
+    expect(settings.authDomain, 'project.firebaseapp.com');
+  });
+
+  test('Firebase Android google-services JSON can be pasted', () {
+    final settings = parseFirebaseSettings(jsonEncode({
+      'project_info': {
+        'project_number': 'sender-id',
+        'project_id': 'project-id',
+        'storage_bucket': 'project.firebasestorage.app',
+      },
+      'client': [
+        {
+          'client_info': {'mobilesdk_app_id': 'android-app-id'},
+          'api_key': [
+            {'current_key': 'api-key'}
+          ],
+        }
+      ],
+    }));
+
+    expect(settings.isConfigured, isTrue);
+    expect(settings.appId, 'android-app-id');
+    expect(settings.messagingSenderId, 'sender-id');
   });
 
   test('empty modern backups are rejected before replacement', () {
@@ -236,5 +362,50 @@ void main() {
       }),
       throwsFormatException,
     );
+  });
+
+  test('modern backups can restore an empty article catalog', () {
+    expect(
+      () => validateBackupPayload({
+        'version': 3,
+        'data': {
+          'sessions': [
+            {'id': 'session-1'}
+          ],
+          'articles': <Object>[],
+          'appSettings': <Object>[],
+        },
+      }),
+      returnsNormally,
+    );
+  });
+
+  testWidgets('association rename dialog updates without framework exception',
+      (tester) async {
+    final controller = _MemoryAppController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ConfigPage(
+            controller: controller,
+            updateResult: null,
+            checkingUpdate: false,
+            onCheckUpdate: () {},
+            onOpenUpdate: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Renommer'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Nouvelle asso');
+    await tester.tap(find.text('Valider'));
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pumpAndSettle();
+
+    expect(controller.associationName, 'Nouvelle asso');
+    expect(tester.takeException(), isNull);
   });
 }

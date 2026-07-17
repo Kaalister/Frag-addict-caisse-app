@@ -3,25 +3,57 @@ part of '../../main.dart';
 class FirebaseBootstrap {
   static bool initialized = false;
   static String? error;
+  static FirebaseSettings? settings;
 
-  static Future<void> initialize() async {
+  static User? get currentUser {
+    if (!initialized) return null;
     try {
-      final options = DefaultFirebaseOptions.currentPlatform;
-      if (_isPlaceholder(options)) {
-        error = 'Configuration Firebase à compléter';
-        return;
-      }
-      await Firebase.initializeApp(options: options);
+      return FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> initialize(FirebaseSettings? configuredSettings) async {
+    initialized = false;
+    settings = configuredSettings;
+    if (configuredSettings == null || !configuredSettings.isConfigured) {
+      error = 'Configuration Firebase à compléter';
+      return;
+    }
+    try {
+      await Firebase.initializeApp(options: configuredSettings.toOptions());
       initialized = true;
+      error = null;
     } catch (exception) {
       error = '$exception';
     }
   }
 
-  static bool _isPlaceholder(FirebaseOptions options) {
-    return options.apiKey.contains('REPLACE_ME') ||
-        options.appId.contains('REPLACE_ME') ||
-        options.projectId.contains('REPLACE_ME');
+  static Future<void> reconfigure(FirebaseSettings configuredSettings) async {
+    await _deleteCurrentApp();
+    await initialize(configuredSettings);
+  }
+
+  static Future<void> reset() async {
+    await _deleteCurrentApp();
+    initialized = false;
+    settings = null;
+    error = 'Firebase non configuré';
+  }
+
+  static Future<void> _deleteCurrentApp() async {
+    if (initialized) {
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {}
+    }
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        await Firebase.app().delete();
+      } catch (_) {}
+    }
+    initialized = false;
   }
 }
 
@@ -42,25 +74,35 @@ class AppColors {
 }
 
 class VisualIdentity {
-  static const name = 'Frags Addicts Tactical POS';
+  static const name = 'Tilly';
   static const mood = 'noir carbone, vert traceur, cyan instrumentation';
   static const radius = 8.0;
 }
 
+extension ThemeAccent on BuildContext {
+  Color get primaryAccent => Theme.of(this).colorScheme.primary;
+  Color get onPrimaryAccent => Theme.of(this).colorScheme.onPrimary;
+}
+
 const _dataEnvironmentSuffix = kReleaseMode ? '' : '_dev';
+const _firebaseOrganizationId = 'default';
 const _firebaseSnapshotId = kReleaseMode ? 'caisse-main' : 'caisse-dev';
 const _githubOwner = 'Kaalister';
-const _githubRepo = 'Frag-addict-caisse-app';
+const _githubRepo = 'Tilly-caisse-app';
 const _appBuildVersion =
     String.fromEnvironment('APP_VERSION', defaultValue: '1.0.0');
 const _latestReleaseApi =
     'https://api.github.com/repos/$_githubOwner/$_githubRepo/releases/latest';
+const _firebaseSetupGuideUrl =
+    'https://github.com/$_githubOwner/$_githubRepo/blob/main/documentation/FIREBASE_SETUP.md';
+const _helloAssoSetupGuideUrl =
+    'https://github.com/$_githubOwner/$_githubRepo/blob/main/documentation/MISE_EN_PLACE.md#12-configurer-helloasso';
 
 String _databaseFileName(String? userScopeId) {
   if (userScopeId == null) {
-    return 'frags_addicts_caisse$_dataEnvironmentSuffix.db';
+    return 'tilly$_dataEnvironmentSuffix.db';
   }
-  return 'frags_addicts_caisse${_dataEnvironmentSuffix}_$userScopeId.db';
+  return 'tilly${_dataEnvironmentSuffix}_$userScopeId.db';
 }
 
 class AppUpdateInfo {
@@ -108,7 +150,7 @@ class AppUpdateService {
         Uri.parse(_latestReleaseApi),
         headers: const {
           'Accept': 'application/vnd.github+json',
-          'User-Agent': 'FragsAddictsCaisseUpdateChecker',
+          'User-Agent': 'TillyUpdateChecker',
         },
       );
       if (response.statusCode != 200) {
@@ -207,77 +249,84 @@ List<int> _versionParts(String version) {
       .toList();
 }
 
-class CaisseAirsoftApp extends StatelessWidget {
-  const CaisseAirsoftApp({super.key});
+class TillyApp extends StatelessWidget {
+  const TillyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Caisse Airsoft',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: AppColors.bg,
-        colorScheme: ColorScheme.fromSeed(
-          brightness: Brightness.dark,
-          seedColor: AppColors.accent,
-          primary: AppColors.accent,
-          secondary: AppColors.accent2,
-          surface: AppColors.surface,
-          error: AppColors.danger,
-        ),
-        useMaterial3: true,
-        cardTheme: CardThemeData(
-          color: AppColors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(VisualIdentity.radius),
-            side: const BorderSide(color: AppColors.border),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: AppColors.surface2,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: AppColors.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: AppColors.accent),
-          ),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          indicatorColor: AppColors.accent,
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: Colors.black);
-            }
-            return const IconThemeData(color: AppColors.muted);
-          }),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const TextStyle(
-                  color: AppColors.accent,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12);
-            }
-            return const TextStyle(color: AppColors.muted, fontSize: 12);
-          }),
-        ),
-        navigationRailTheme: const NavigationRailThemeData(
-          indicatorColor: AppColors.accent,
-          selectedIconTheme: IconThemeData(color: Colors.black),
-          unselectedIconTheme: IconThemeData(color: AppColors.muted),
-          selectedLabelTextStyle:
-              TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800),
-          unselectedLabelTextStyle: TextStyle(color: AppColors.muted),
-        ),
-      ),
+      title: 'Tilly',
+      theme: caisseTheme(AppColors.accent),
       home: const RootShell(),
     );
   }
 }
+
+ThemeData caisseTheme(Color primaryColor) {
+  final onPrimary = _readableOnColor(primaryColor);
+  return ThemeData(
+    brightness: Brightness.dark,
+    scaffoldBackgroundColor: AppColors.bg,
+    colorScheme: ColorScheme.fromSeed(
+      brightness: Brightness.dark,
+      seedColor: primaryColor,
+      primary: primaryColor,
+      onPrimary: onPrimary,
+      secondary: AppColors.accent2,
+      surface: AppColors.surface,
+      error: AppColors.danger,
+    ),
+    useMaterial3: true,
+    cardTheme: CardThemeData(
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(VisualIdentity.radius),
+        side: const BorderSide(color: AppColors.border),
+      ),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: AppColors.surface2,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: BorderSide(color: primaryColor),
+      ),
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      indicatorColor: primaryColor,
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return IconThemeData(color: onPrimary);
+        }
+        return const IconThemeData(color: AppColors.muted);
+      }),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return TextStyle(
+              color: primaryColor, fontWeight: FontWeight.w800, fontSize: 12);
+        }
+        return const TextStyle(color: AppColors.muted, fontSize: 12);
+      }),
+    ),
+    navigationRailTheme: NavigationRailThemeData(
+      indicatorColor: primaryColor,
+      selectedIconTheme: IconThemeData(color: onPrimary),
+      unselectedIconTheme: const IconThemeData(color: AppColors.muted),
+      selectedLabelTextStyle:
+          TextStyle(color: primaryColor, fontWeight: FontWeight.w800),
+      unselectedLabelTextStyle: const TextStyle(color: AppColors.muted),
+    ),
+  );
+}
+
+Color _readableOnColor(Color color) =>
+    color.computeLuminance() > 0.45 ? Colors.black : Colors.white;

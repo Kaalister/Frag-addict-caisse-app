@@ -78,13 +78,117 @@ String normalizedCategoryName(String category) => category.trim().toUpperCase();
 
 List<String> defaultArticleCategories() => [
       'BOISSONS',
-      'SNACKING',
-      'MUNITIONS',
       'REPAS',
       'GOODIES',
       'LOCATION',
-      'DIVERS',
     ];
+
+class AppTabIds {
+  static const sales = 'sales';
+  static const meals = 'meals';
+  static const players = 'players';
+  static const cash = 'cash';
+  static const stats = 'stats';
+  static const bilan = 'bilan';
+  static const history = 'history';
+  static const articles = 'articles';
+  static const config = 'config';
+
+  static const configurable = <String>[
+    meals,
+    players,
+    cash,
+    stats,
+    bilan,
+    articles,
+  ];
+}
+
+const _defaultMainTabVisibility = <String, bool>{
+  AppTabIds.meals: true,
+  AppTabIds.players: true,
+  AppTabIds.cash: true,
+  AppTabIds.stats: true,
+  AppTabIds.bilan: true,
+  AppTabIds.articles: true,
+};
+
+class AppSettings {
+  const AppSettings({
+    this.associationName = 'TILLY',
+    this.appIconPath = '',
+    this.primaryColorValue = 0xFFC8F135,
+    this.mealsEnabled = true,
+    this.mainTabVisibility = _defaultMainTabVisibility,
+  });
+
+  final String associationName;
+  final String appIconPath;
+  final int primaryColorValue;
+  final bool mealsEnabled;
+  final Map<String, bool> mainTabVisibility;
+
+  bool isMainTabVisible(String id) => mainTabVisibility[id] ?? true;
+  Color get primaryColor => Color(primaryColorValue);
+
+  AppSettings copyWith({
+    String? associationName,
+    String? appIconPath,
+    int? primaryColorValue,
+    bool? mealsEnabled,
+    Map<String, bool>? mainTabVisibility,
+  }) {
+    return AppSettings(
+      associationName: associationName ?? this.associationName,
+      appIconPath: appIconPath ?? this.appIconPath,
+      primaryColorValue: primaryColorValue ?? this.primaryColorValue,
+      mealsEnabled: mealsEnabled ?? this.mealsEnabled,
+      mainTabVisibility: mainTabVisibility ?? this.mainTabVisibility,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'associationName': associationName,
+        'appIconPath': appIconPath,
+        'primaryColorValue': primaryColorValue,
+        'mealsEnabled': mealsEnabled,
+        'mainTabVisibility': mainTabVisibility,
+      };
+
+  factory AppSettings.fromJson(Map<String, dynamic> json) {
+    final visibility = <String, bool>{..._defaultMainTabVisibility};
+    final storedVisibility = json['mainTabVisibility'];
+    if (storedVisibility is Map) {
+      for (final entry in storedVisibility.entries) {
+        if (AppTabIds.configurable.contains('${entry.key}')) {
+          visibility['${entry.key}'] = entry.value == true;
+        }
+      }
+    }
+    final rawName = '${json['associationName'] ?? ''}'.trim();
+    return AppSettings(
+      associationName: rawName.isEmpty ? 'TILLY' : rawName,
+      appIconPath: '${json['appIconPath'] ?? ''}'.trim(),
+      primaryColorValue:
+          _parseColorValue(json['primaryColorValue']) ?? 0xFFC8F135,
+      mealsEnabled: json['mealsEnabled'] != false,
+      mainTabVisibility: visibility,
+    );
+  }
+}
+
+int? _parseColorValue(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.round();
+  final text = '$value'.trim();
+  if (text.isEmpty) return null;
+  final normalized = text
+      .replaceFirst('#', '')
+      .replaceFirst(RegExp(r'^0x', caseSensitive: false), '');
+  final hex = normalized.length == 6 ? 'FF$normalized' : normalized;
+  if (hex.length != 8) return null;
+  return int.tryParse(hex, radix: 16);
+}
 
 class SessionRecord {
   SessionRecord({
@@ -560,6 +664,132 @@ class HelloAssoSettings {
       );
 }
 
+class FirebaseSettings {
+  const FirebaseSettings({
+    this.apiKey = '',
+    this.appId = '',
+    this.messagingSenderId = '',
+    this.projectId = '',
+    this.authDomain = '',
+    this.storageBucket = '',
+    this.measurementId = '',
+  });
+
+  final String apiKey;
+  final String appId;
+  final String messagingSenderId;
+  final String projectId;
+  final String authDomain;
+  final String storageBucket;
+  final String measurementId;
+
+  bool get isConfigured =>
+      apiKey.trim().isNotEmpty &&
+      appId.trim().isNotEmpty &&
+      messagingSenderId.trim().isNotEmpty &&
+      projectId.trim().isNotEmpty;
+
+  FirebaseOptions toOptions() => FirebaseOptions(
+        apiKey: apiKey.trim(),
+        appId: appId.trim(),
+        messagingSenderId: messagingSenderId.trim(),
+        projectId: projectId.trim(),
+        authDomain: _optional(authDomain),
+        storageBucket: _optional(storageBucket),
+        measurementId: _optional(measurementId),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'apiKey': apiKey,
+        'appId': appId,
+        'messagingSenderId': messagingSenderId,
+        'projectId': projectId,
+        'authDomain': authDomain,
+        'storageBucket': storageBucket,
+        'measurementId': measurementId,
+      };
+
+  factory FirebaseSettings.fromJson(Map<String, dynamic> json) =>
+      FirebaseSettings(
+        apiKey: '${json['apiKey'] ?? ''}',
+        appId: '${json['appId'] ?? ''}',
+        messagingSenderId: '${json['messagingSenderId'] ?? ''}',
+        projectId: '${json['projectId'] ?? ''}',
+        authDomain: '${json['authDomain'] ?? ''}',
+        storageBucket: '${json['storageBucket'] ?? ''}',
+        measurementId: '${json['measurementId'] ?? ''}',
+      );
+
+  static String? _optional(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+}
+
+FirebaseSettings parseFirebaseSettings(String source) {
+  final value = source.trim();
+  if (value.isEmpty) {
+    throw const FormatException('Colle la configuration fournie par Firebase');
+  }
+
+  try {
+    final decoded = jsonDecode(value);
+    if (decoded is Map) {
+      final json = Map<String, dynamic>.from(decoded);
+      final googleServices = _firebaseSettingsFromGoogleServices(json);
+      if (googleServices != null) return googleServices;
+      final settings = FirebaseSettings.fromJson(json);
+      if (settings.isConfigured) return settings;
+    }
+  } catch (_) {}
+
+  String field(String name) {
+    final match = RegExp(
+      '["\']?$name["\']?\\s*:\\s*["\']([^"\']+)["\']',
+      caseSensitive: false,
+    ).firstMatch(value);
+    return match?.group(1)?.trim() ?? '';
+  }
+
+  final settings = FirebaseSettings(
+    apiKey: field('apiKey'),
+    appId: field('appId'),
+    messagingSenderId: field('messagingSenderId'),
+    projectId: field('projectId'),
+    authDomain: field('authDomain'),
+    storageBucket: field('storageBucket'),
+    measurementId: field('measurementId'),
+  );
+  if (!settings.isConfigured) {
+    throw const FormatException(
+        'Configuration non reconnue. Utilise le bloc fourni par Firebase ou la saisie avancée.');
+  }
+  return settings;
+}
+
+FirebaseSettings? _firebaseSettingsFromGoogleServices(
+    Map<String, dynamic> json) {
+  final projectInfo = json['project_info'];
+  final clients = json['client'];
+  if (projectInfo is! Map || clients is! List || clients.isEmpty) return null;
+  final client = clients.first;
+  if (client is! Map) return null;
+  final clientInfo = client['client_info'];
+  final apiKeys = client['api_key'];
+  if (clientInfo is! Map || apiKeys is! List || apiKeys.isEmpty) return null;
+  final apiKey = apiKeys.first;
+  if (apiKey is! Map) return null;
+
+  final settings = FirebaseSettings(
+    apiKey: '${apiKey['current_key'] ?? ''}',
+    appId: '${clientInfo['mobilesdk_app_id'] ?? ''}',
+    messagingSenderId: '${projectInfo['project_number'] ?? ''}',
+    projectId: '${projectInfo['project_id'] ?? ''}',
+    storageBucket: '${projectInfo['storage_bucket'] ?? ''}',
+  );
+  return settings.isConfigured ? settings : null;
+}
+
 class HelloAssoEvent {
   const HelloAssoEvent({
     required this.name,
@@ -594,137 +824,4 @@ class HelloAssoRegistrant {
   final String mealLabel;
 }
 
-List<Article> defaultArticles() => [
-      Article(
-          id: 'coca',
-          category: 'BOISSONS',
-          type: 'standard',
-          icon: '🥤',
-          name: 'Coca / Pepsi',
-          price: 2,
-          memberPrice: 1.8,
-          stock: 24,
-          threshold: 6),
-      Article(
-          id: 'eau',
-          category: 'BOISSONS',
-          type: 'standard',
-          icon: '💧',
-          name: 'Eau',
-          price: 1,
-          memberPrice: .8,
-          stock: 24,
-          threshold: 6),
-      Article(
-          id: 'jus',
-          category: 'BOISSONS',
-          type: 'standard',
-          icon: '🧃',
-          name: 'Jus / IceTea',
-          price: 2,
-          memberPrice: 1.8,
-          stock: 12,
-          threshold: 4),
-      Article(
-          id: 'monster-mango',
-          category: 'BOISSONS',
-          type: 'standard',
-          icon: '🟡',
-          name: 'Monster Mango',
-          price: 2.5,
-          memberPrice: 2,
-          stock: 6,
-          threshold: 2),
-      Article(
-          id: 'monster-noir',
-          category: 'BOISSONS',
-          type: 'standard',
-          icon: '⚫',
-          name: 'Monster Noir',
-          price: 2.5,
-          memberPrice: 2,
-          stock: 6,
-          threshold: 2),
-      Article(
-          id: 'snacks',
-          category: 'SNACKING',
-          type: 'standard',
-          icon: '🍟',
-          name: 'Snacks / Chips',
-          price: 1.5,
-          memberPrice: 1.5,
-          stock: 20,
-          threshold: 5),
-      Article(
-          id: 'billes',
-          category: 'MUNITIONS',
-          type: 'standard',
-          icon: '⚙️',
-          name: 'Billes (sachet)',
-          price: 3,
-          memberPrice: 2.5,
-          stock: 30,
-          threshold: 5),
-      Article(
-          id: 'gaz',
-          category: 'MUNITIONS',
-          type: 'standard',
-          icon: '🔵',
-          name: 'Gaz',
-          price: 5,
-          memberPrice: 4,
-          stock: 10,
-          threshold: 2),
-      Article(
-          id: 'repas',
-          category: 'REPAS',
-          type: 'standard',
-          icon: '🍔',
-          name: 'Repas',
-          price: 10,
-          memberPrice: 9,
-          stock: 20,
-          threshold: 5),
-      Article(
-          id: 'patch',
-          category: 'GOODIES',
-          type: 'standard',
-          icon: '🎖️',
-          name: 'Patch',
-          price: 5,
-          memberPrice: 4,
-          stock: 50,
-          threshold: 10),
-      Article(
-          id: 'porte-cle',
-          category: 'GOODIES',
-          type: 'standard',
-          icon: '🔑',
-          name: 'Porte-clés',
-          price: 3,
-          memberPrice: 2.5,
-          stock: 30,
-          threshold: 5),
-      Article(
-          id: 'divers',
-          category: 'GOODIES',
-          type: 'standard',
-          icon: '📦',
-          name: 'Divers',
-          price: 0,
-          memberPrice: 0,
-          stock: 0,
-          threshold: 0),
-      Article(
-          id: 'location',
-          category: 'LOCATION',
-          type: 'location',
-          icon: '🎯',
-          name: 'Location réplique',
-          price: 15,
-          memberPrice: 12,
-          stock: 0,
-          threshold: 0,
-          bbAuto: 0,
-          gasAuto: 0),
-    ];
+List<Article> defaultArticles() => [];

@@ -172,7 +172,7 @@ pw.Widget _pdfBilanHeader(SessionRecord session) {
     children: [
       pw.Center(
         child: pw.Text(
-          'CAISSE AIRSOFT',
+          'TILLY',
           style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
         ),
       ),
@@ -572,7 +572,7 @@ Future<Uint8List> _buildPlayersPdf(
       build: (context) => [
         pw.Center(
           child: pw.Text(
-            'CAISSE AIRSOFT',
+            'TILLY',
             style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
           ),
         ),
@@ -846,7 +846,7 @@ pw.Widget _pdfCashHeader(DateTime date, AppController controller) {
     children: [
       pw.Center(
         child: pw.Text(
-          'CAISSE AIRSOFT',
+          'TILLY',
           style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
         ),
       ),
@@ -986,7 +986,7 @@ pw.Widget _pdfCashFooter(DateTime date, int pageNumber, int pageCount) {
   return pw.Align(
     alignment: pw.Alignment.center,
     child: pw.Text(
-      'Caisse Airsoft - ${dateLabel(date)} - Page $pageNumber/$pageCount',
+      'Tilly - ${dateLabel(date)} - Page $pageNumber/$pageCount',
       style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
     ),
   );
@@ -1062,6 +1062,7 @@ Future<Uint8List> _buildKpiPdf(
   final topSold = [...rows]..sort((a, b) => b.outgoing.compareTo(a.outgoing));
   final categoryCa = _kpiCategoryCa(rows);
   final sessionCa = _kpiSessionCa(controller);
+  final mealsEnabled = controller.mealsEnabled;
 
   document.addPage(
     pw.MultiPage(
@@ -1111,7 +1112,7 @@ Future<Uint8List> _buildKpiPdf(
               [
                 'ARTICLE',
                 'VENDU',
-                'REP./ASSO',
+                mealsEnabled ? 'REP./ASSO' : 'ASSO',
                 'SORTI',
                 'CA',
                 'STOCK',
@@ -1125,9 +1126,13 @@ Future<Uint8List> _buildKpiPdf(
                 [
                   row.article.name,
                   row.sold == 0 ? '-' : '${row.sold}',
-                  row.mealUsed == 0 && row.associationUsed == 0
-                      ? '-'
-                      : '${row.mealUsed}/${row.associationUsed}',
+                  mealsEnabled
+                      ? row.mealUsed == 0 && row.associationUsed == 0
+                          ? '-'
+                          : '${row.mealUsed}/${row.associationUsed}'
+                      : row.associationUsed == 0
+                          ? '-'
+                          : '${row.associationUsed}',
                   row.outgoing == 0 ? '-' : '${row.outgoing}',
                   _pdfMoney(row.ca),
                   '${row.stockRest}/${row.stockInitial}',
@@ -1162,7 +1167,9 @@ Future<Uint8List> _buildKpiPdf(
           PdfColors.blue700,
         ),
         pw.SizedBox(height: 28),
-        _pdfSectionHeader('2. SORTIES STOCK (VENTES ET REPAS, TOP 10)'),
+        _pdfSectionHeader(mealsEnabled
+            ? '2. SORTIES STOCK (VENTES ET REPAS, TOP 10)'
+            : '2. SORTIES STOCK (VENTES, TOP 10)'),
         _pdfBarChart(
           topSold.take(10).map((row) {
             return (
@@ -1205,7 +1212,7 @@ pw.Widget _pdfKpiHeader(DateTime date, AppController controller) {
     children: [
       pw.Center(
         child: pw.Text(
-          'CAISSE AIRSOFT - KPI ACHATS & STOCK',
+          'TILLY - KPI ACHATS & STOCK',
           style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
         ),
       ),
@@ -1241,7 +1248,7 @@ pw.Widget _pdfFooter(
   return pw.Align(
     alignment: pw.Alignment.center,
     child: pw.Text(
-      'Caisse Airsoft - ${dateLabel(date)}$sessionLabel - Page $pageNumber/$pageCount',
+      'Tilly - ${dateLabel(date)}$sessionLabel - Page $pageNumber/$pageCount',
       style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey700),
     ),
   );

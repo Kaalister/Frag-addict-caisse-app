@@ -24,18 +24,17 @@ class FirebaseSyncService {
   DocumentReference<Map<String, dynamic>> _snapshotRef(User user) =>
       FirebaseFirestore.instance
           .collection('organizations')
-          .doc('frags-addicts')
+          .doc(_firebaseOrganizationId)
           .collection('users')
           .doc(user.uid)
           .collection('snapshots')
           .doc(_firebaseSnapshotId);
 
   bool get isAvailable =>
-      FirebaseBootstrap.initialized &&
-      FirebaseAuth.instance.currentUser != null;
+      FirebaseBootstrap.initialized && FirebaseBootstrap.currentUser != null;
 
   Future<bool> hasRemoteSnapshot() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseBootstrap.currentUser;
     if (!FirebaseBootstrap.initialized || user == null) return false;
     return (await _snapshotRef(user).get()).exists;
   }
@@ -46,7 +45,7 @@ class FirebaseSyncService {
       return FirebaseSyncResult(FirebaseSyncAction.disabled,
           FirebaseBootstrap.error ?? 'Firebase non configuré');
     }
-    final user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseBootstrap.currentUser;
     if (user == null) {
       return const FirebaseSyncResult(
           FirebaseSyncAction.noUser, 'Connexion Firebase requise');

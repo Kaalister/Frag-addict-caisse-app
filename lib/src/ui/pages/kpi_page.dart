@@ -101,8 +101,15 @@ class KpiPage extends StatelessWidget {
                               : AppColors.danger,
                       backgroundColor: AppColors.border),
                   const SizedBox(height: 8),
-                  Text(
-                      'Vendu ${row.sold} · Dans repas ${row.mealUsed} · Asso ${row.associationUsed} · Sorti ${row.outgoing} · CA ${money(row.ca)} · stock ${row.stockRest}/${row.stockInitial} · suggestion achat >= ${row.suggestion}'),
+                  Text([
+                    'Vendu ${row.sold}',
+                    if (controller.mealsEnabled) 'Dans repas ${row.mealUsed}',
+                    'Asso ${row.associationUsed}',
+                    'Sorti ${row.outgoing}',
+                    'CA ${money(row.ca)}',
+                    'stock ${row.stockRest}/${row.stockInitial}',
+                    'suggestion achat >= ${row.suggestion}',
+                  ].join(' · ')),
                 ],
               ),
             ),
@@ -158,10 +165,12 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
   final associationUsed = <String, int>{};
   final days = <String>{};
   final selectedSales = sales ?? controller.sales;
-  final linkedMeals = {
-    for (final meal in controller.meals)
-      if (meal.saleId.isNotEmpty) meal.saleId: meal
-  };
+  final linkedMeals = controller.mealsEnabled
+      ? {
+          for (final meal in controller.meals)
+            if (meal.saleId.isNotEmpty) meal.saleId: meal
+        }
+      : const <String, MealOrder>{};
   for (final sale in selectedSales) {
     days.add(dateLabel(sale.createdAt));
     for (final item in sale.items) {
@@ -177,10 +186,12 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
       }
     }
   }
-  for (final meal in controller.meals.where((order) => order.consumesStock)) {
-    days.add(dateLabel(meal.preparedAt ?? meal.createdAt));
-    for (final entry in meal.stockItems.entries) {
-      mealUsed[entry.key] = (mealUsed[entry.key] ?? 0) + entry.value;
+  if (controller.mealsEnabled) {
+    for (final meal in controller.meals.where((order) => order.consumesStock)) {
+      days.add(dateLabel(meal.preparedAt ?? meal.createdAt));
+      for (final entry in meal.stockItems.entries) {
+        mealUsed[entry.key] = (mealUsed[entry.key] ?? 0) + entry.value;
+      }
     }
   }
   for (final movement in controller.stockMovements.where((entry) =>
@@ -190,7 +201,7 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
         (associationUsed[movement.articleId] ?? 0) - movement.quantityDelta;
   }
   final dayCount = max(1, days.length);
-  return controller.articles
+  return controller.activeArticles
       .where((a) => a.type == 'standard' && a.threshold > 0)
       .map((a) {
     final s = sold[a.id] ?? (quantity: 0, ca: 0.0);

@@ -26,8 +26,7 @@ class LocalDatabase {
     final fileName = _databaseFileName(_userScopeId);
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final supportDirectory = await getApplicationSupportDirectory();
-      final directory =
-          Directory(path.join(supportDirectory.path, 'FragsAddictsCaisse'));
+      final directory = Directory(path.join(supportDirectory.path, 'Tilly'));
       await directory.create(recursive: true);
       return path.join(directory.path, fileName);
     }
@@ -542,6 +541,24 @@ class LocalDatabase {
     }
   }
 
+  Future<AppSettings> loadAppSettings() async {
+    final db = await database;
+    final rows = await db.query('app_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: ['app_settings'],
+        limit: 1);
+    if (rows.isEmpty || rows.first['value'] == null) {
+      return const AppSettings();
+    }
+    try {
+      return AppSettings.fromJson(Map<String, dynamic>.from(
+          jsonDecode('${rows.first['value']}') as Map));
+    } catch (_) {
+      return const AppSettings();
+    }
+  }
+
   Future<DateTime?> loadLocalUpdatedAt() async {
     final db = await database;
     final rows = await db.query('app_settings',
@@ -689,6 +706,27 @@ class LocalDatabase {
       await txn.delete('app_settings',
           where: 'key = ? AND value = ?',
           whereArgs: ['active_session_id', sessionId]);
+    });
+  }
+
+  Future<void> resetBusinessData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      for (final table in [
+        'cash_count_lines',
+        'cash_counts',
+        'stock_movements',
+        'meal_orders',
+        'sale_items',
+        'sales',
+        'session_players',
+        'articles',
+        'article_categories',
+        'players',
+        'sessions',
+      ]) {
+        await txn.delete(table);
+      }
     });
   }
 
@@ -934,6 +972,15 @@ class LocalDatabase {
             {'key': 'local_updated_at', 'value': now, 'updated_at': now},
             conflictAlgorithm: ConflictAlgorithm.replace);
       }
+      await txn.insert(
+        'app_settings',
+        {
+          'key': 'app_settings',
+          'value': jsonEncode(state.appSettings.toJson()),
+          'updated_at': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
 
       final uniqueAllPlayers = <String, Player>{
         for (final player in [...state.allPlayers, ...state.players])
@@ -1290,9 +1337,6 @@ void validateBackupPayload(Map<String, dynamic> payload) {
   }
   if ((typedData['sessions'] as List).isEmpty) {
     throw const FormatException('Sauvegarde invalide : aucune session');
-  }
-  if ((typedData['articles'] as List).isEmpty) {
-    throw const FormatException('Sauvegarde invalide : aucun article');
   }
   for (final key in [
     'players',

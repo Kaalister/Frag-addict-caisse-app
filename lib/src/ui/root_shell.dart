@@ -88,166 +88,434 @@ class _RootShellState extends State<RootShell> {
           return const Scaffold(
               body: Center(child: CircularProgressIndicator()));
         }
-        final pages = [
-          CaissePage(controller: controller),
-          MealsPage(controller: controller),
-          PlayersPage(controller: controller),
-          CashAnalysisPage(controller: controller),
-          KpiPage(controller: controller),
-          BilanPage(controller: controller),
-          HistoryPage(controller: controller),
-          ArticlesPricePage(controller: controller),
-          ConfigPage(
-            controller: controller,
+        final destinations = _visibleShellDestinations(controller,
             updateResult: updateResult,
             checkingUpdate: checkingUpdate,
             onCheckUpdate: _checkForUpdate,
-            onOpenUpdate: _openUpdate,
-          ),
-        ];
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final tablet = constraints.maxWidth >= 900;
-            final body = IndexedStack(index: controller.tab, children: pages);
-            return Scaffold(
-              appBar: AppBar(
-                backgroundColor: AppColors.surface,
-                titleSpacing: 12,
-                title: Row(
-                  children: [
-                    const Icon(Icons.bolt, color: AppColors.accent),
-                    const SizedBox(width: 8),
-                    const Flexible(
-                      child: Text(
-                        'CAISSE AIRSOFT',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontWeight: FontWeight.w900, letterSpacing: 1.4),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: const Icon(Icons.flag, size: 16),
-                      label: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 170),
+            onOpenUpdate: _openUpdate);
+        var selectedIndex = destinations.indexWhere(
+            (destination) => destination.tabIndex == controller.tab);
+        if (selectedIndex < 0) {
+          selectedIndex = 0;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) controller.setTab(destinations.first.tabIndex);
+          });
+        }
+        return Theme(
+          data: caisseTheme(controller.primaryColor),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final tablet = constraints.maxWidth >= 900;
+              final body = IndexedStack(
+                index: selectedIndex,
+                children: [
+                  for (final destination in destinations) destination.page,
+                ],
+              );
+              return Scaffold(
+                appBar: AppBar(
+                  backgroundColor: AppColors.surface,
+                  titleSpacing: 12,
+                  title: Row(
+                    children: [
+                      _AppTitleIcon(controller: controller),
+                      const SizedBox(width: 8),
+                      Flexible(
                         child: Text(
-                            controller.session.isEmpty
-                                ? 'PARTIE'
-                                : controller.session,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      onPressed: () => _editSession(context),
-                    ),
-                  ],
-                ),
-                bottom: const PreferredSize(
-                  preferredSize: Size.fromHeight(2),
-                  child: ColoredBox(
-                      color: AppColors.accent,
-                      child: SizedBox(height: 2, width: double.infinity)),
-                ),
-              ),
-              body: tablet
-                  ? Row(
-                      children: [
-                        NavigationRail(
-                          selectedIndex: controller.tab,
-                          onDestinationSelected: controller.setTab,
-                          backgroundColor: AppColors.surface,
-                          indicatorColor: AppColors.accent,
-                          labelType: NavigationRailLabelType.all,
-                          destinations: const [
-                            NavigationRailDestination(
-                                icon: Icon(Icons.point_of_sale),
-                                label: Text('Vente')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.restaurant),
-                                label: Text('Repas')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.groups),
-                                label: Text('Joueurs')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.payments),
-                                label: Text('Caisse')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.trending_up),
-                                label: Text('Stats')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.bar_chart),
-                                label: Text('Bilan')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.history),
-                                label: Text('Historique')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.inventory_2),
-                                label: Text('Articles')),
-                            NavigationRailDestination(
-                                icon: Icon(Icons.settings),
-                                label: Text('Config')),
-                          ],
+                          controller.associationName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, letterSpacing: 1.4),
                         ),
-                        const VerticalDivider(
-                            width: 1, color: AppColors.border),
-                        Expanded(child: body),
-                      ],
-                    )
-                  : body,
-              bottomNavigationBar: tablet
-                  ? null
-                  : NavigationBar(
-                      selectedIndex: controller.tab,
-                      onDestinationSelected: controller.setTab,
-                      backgroundColor: AppColors.surface,
-                      indicatorColor: AppColors.accent,
-                      destinations: const [
-                        NavigationDestination(
-                            icon: Icon(Icons.point_of_sale), label: 'Vente'),
-                        NavigationDestination(
-                            icon: Icon(Icons.restaurant), label: 'Repas'),
-                        NavigationDestination(
-                            icon: Icon(Icons.groups), label: 'Joueurs'),
-                        NavigationDestination(
-                            icon: Icon(Icons.payments), label: 'Caisse'),
-                        NavigationDestination(
-                            icon: Icon(Icons.trending_up), label: 'Stats'),
-                        NavigationDestination(
-                            icon: Icon(Icons.bar_chart), label: 'Bilan'),
-                        NavigationDestination(
-                            icon: Icon(Icons.history), label: 'Historique'),
-                        NavigationDestination(
-                            icon: Icon(Icons.inventory_2), label: 'Articles'),
-                        NavigationDestination(
-                            icon: Icon(Icons.settings), label: 'Config'),
-                      ],
-                    ),
-            );
-          },
+                      ),
+                      const SizedBox(width: 8),
+                      ActionChip(
+                        avatar: const Icon(Icons.flag, size: 16),
+                        label: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 170),
+                          child: Text(
+                              controller.session.isEmpty
+                                  ? 'PARTIE'
+                                  : controller.session,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                        onPressed: () => _editSession(context),
+                      ),
+                    ],
+                  ),
+                  bottom: const PreferredSize(
+                    preferredSize: Size.fromHeight(2),
+                    child: _PrimaryAccentBar(),
+                  ),
+                ),
+                body: tablet
+                    ? Row(
+                        children: [
+                          NavigationRail(
+                            selectedIndex: selectedIndex,
+                            onDestinationSelected: (index) =>
+                                controller.setTab(destinations[index].tabIndex),
+                            backgroundColor: AppColors.surface,
+                            indicatorColor: context.primaryAccent,
+                            labelType: NavigationRailLabelType.all,
+                            destinations: [
+                              for (final destination in destinations)
+                                NavigationRailDestination(
+                                    icon: Icon(destination.icon),
+                                    label: Text(destination.label)),
+                            ],
+                          ),
+                          const VerticalDivider(
+                              width: 1, color: AppColors.border),
+                          Expanded(child: body),
+                        ],
+                      )
+                    : body,
+                bottomNavigationBar: tablet
+                    ? null
+                    : _CompactBottomNavigation(
+                        destinations: destinations,
+                        selectedIndex: selectedIndex,
+                        onDestinationSelected: controller.setTab,
+                      ),
+              );
+            },
+          ),
         );
       },
     );
   }
 
   Future<void> _editSession(BuildContext context) async {
-    final field = TextEditingController(text: controller.session);
+    var draftName = controller.session;
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Nom de la partie'),
-        content: TextField(
-            controller: field,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Ex: Dimanche CQB')),
+        content: TextFormField(
+          initialValue: draftName,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Ex: Dimanche CQB'),
+          textInputAction: TextInputAction.done,
+          onChanged: (value) => draftName = value,
+          onFieldSubmitted: (value) => Navigator.pop(context, value),
+        ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Annuler')),
           FilledButton(
-              onPressed: () => Navigator.pop(context, field.text),
+              onPressed: () => Navigator.pop(context, draftName),
               child: const Text('Valider')),
         ],
       ),
     );
-    if (value != null) await controller.setSession(value);
+    if (value != null) {
+      await Future<void>.delayed(kThemeAnimationDuration);
+      if (!context.mounted) return;
+      await controller.setSession(value);
+    }
+  }
+}
+
+class _CompactBottomNavigation extends StatelessWidget {
+  const _CompactBottomNavigation({
+    required this.destinations,
+    required this.selectedIndex,
+    required this.onDestinationSelected,
+  });
+
+  final List<_ShellDestination> destinations;
+  final int selectedIndex;
+  final ValueChanged<int> onDestinationSelected;
+
+  static const _primaryDestinationIds = {
+    AppTabIds.sales,
+    AppTabIds.meals,
+    AppTabIds.players,
+    AppTabIds.cash,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryDestinations = destinations
+        .where((destination) => _primaryDestinationIds.contains(destination.id))
+        .toList();
+    final secondaryDestinations = destinations
+        .where(
+            (destination) => !_primaryDestinationIds.contains(destination.id))
+        .toList();
+    final selectedDestination = destinations[selectedIndex];
+    final primarySelectedIndex = primaryDestinations
+        .indexWhere((destination) => destination.id == selectedDestination.id);
+    final moreSelected =
+        primarySelectedIndex < 0 && secondaryDestinations.isNotEmpty;
+
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: NavigationBar(
+        height: 72,
+        selectedIndex:
+            moreSelected ? primaryDestinations.length : primarySelectedIndex,
+        onDestinationSelected: (index) {
+          if (index < primaryDestinations.length) {
+            onDestinationSelected(primaryDestinations[index].tabIndex);
+            return;
+          }
+          _showSecondaryDestinations(context, secondaryDestinations);
+        },
+        backgroundColor: AppColors.surface,
+        indicatorColor: context.primaryAccent,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: [
+          for (final destination in primaryDestinations)
+            NavigationDestination(
+              icon: Icon(destination.icon),
+              label: destination.label,
+              tooltip: destination.label,
+            ),
+          if (secondaryDestinations.isNotEmpty)
+            const NavigationDestination(
+              icon: Icon(Icons.grid_view_rounded),
+              label: 'Plus',
+              tooltip: 'Plus de rubriques',
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showSecondaryDestinations(
+    BuildContext context,
+    List<_ShellDestination> secondaryDestinations,
+  ) async {
+    final selectedTab = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    'PLUS DE RUBRIQUES',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.6,
+                    ),
+                  ),
+                ),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisExtent: 64,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                  ),
+                  itemCount: secondaryDestinations.length,
+                  itemBuilder: (context, index) {
+                    final destination = secondaryDestinations[index];
+                    final selected =
+                        destinations[selectedIndex].id == destination.id;
+                    return InkWell(
+                      borderRadius:
+                          BorderRadius.circular(VisualIdentity.radius),
+                      onTap: () =>
+                          Navigator.pop(sheetContext, destination.tabIndex),
+                      child: TacticalCard(
+                        borderColor:
+                            selected ? context.primaryAccent : AppColors.border,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              destination.icon,
+                              color: selected
+                                  ? context.primaryAccent
+                                  : AppColors.muted,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                destination.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: selected
+                                      ? context.primaryAccent
+                                      : AppColors.text,
+                                  fontWeight: selected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (selectedTab != null) onDestinationSelected(selectedTab);
+  }
+}
+
+class _PrimaryAccentBar extends StatelessWidget {
+  const _PrimaryAccentBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: context.primaryAccent,
+      child: const SizedBox(height: 2, width: double.infinity),
+    );
+  }
+}
+
+class _ShellDestination {
+  const _ShellDestination({
+    required this.id,
+    required this.tabIndex,
+    required this.icon,
+    required this.label,
+    required this.page,
+  });
+
+  final String id;
+  final int tabIndex;
+  final IconData icon;
+  final String label;
+  final Widget page;
+}
+
+List<_ShellDestination> _visibleShellDestinations(
+  AppController controller, {
+  required AppUpdateResult? updateResult,
+  required bool checkingUpdate,
+  required VoidCallback onCheckUpdate,
+  required Future<void> Function(AppUpdateInfo update) onOpenUpdate,
+}) {
+  final all = [
+    _ShellDestination(
+      id: AppTabIds.sales,
+      tabIndex: 0,
+      icon: Icons.point_of_sale,
+      label: 'Vente',
+      page: CaissePage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.meals,
+      tabIndex: 1,
+      icon: Icons.restaurant,
+      label: 'Repas',
+      page: MealsPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.players,
+      tabIndex: 2,
+      icon: Icons.groups,
+      label: 'Joueurs',
+      page: PlayersPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.cash,
+      tabIndex: 3,
+      icon: Icons.payments,
+      label: 'Caisse',
+      page: CashAnalysisPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.stats,
+      tabIndex: 4,
+      icon: Icons.trending_up,
+      label: 'Stats',
+      page: KpiPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.bilan,
+      tabIndex: 5,
+      icon: Icons.bar_chart,
+      label: 'Bilan',
+      page: BilanPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.history,
+      tabIndex: 6,
+      icon: Icons.history,
+      label: 'Historique',
+      page: HistoryPage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.articles,
+      tabIndex: 7,
+      icon: Icons.inventory_2,
+      label: 'Articles',
+      page: ArticlesPricePage(controller: controller),
+    ),
+    _ShellDestination(
+      id: AppTabIds.config,
+      tabIndex: 8,
+      icon: Icons.settings,
+      label: 'Config',
+      page: ConfigPage(
+        controller: controller,
+        updateResult: updateResult,
+        checkingUpdate: checkingUpdate,
+        onCheckUpdate: onCheckUpdate,
+        onOpenUpdate: onOpenUpdate,
+      ),
+    ),
+  ];
+  return all.where((destination) {
+    if (destination.id == AppTabIds.meals && !controller.mealsEnabled) {
+      return false;
+    }
+    if (AppTabIds.configurable.contains(destination.id)) {
+      return controller.isMainTabVisible(destination.id);
+    }
+    return true;
+  }).toList();
+}
+
+class _AppTitleIcon extends StatelessWidget {
+  const _AppTitleIcon({required this.controller});
+
+  final AppController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final iconPath = controller.appIconPath;
+    if (iconPath.isNotEmpty && File(iconPath).existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.file(
+          File(iconPath),
+          width: 28,
+          height: 28,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              Icon(Icons.bolt, color: context.primaryAccent),
+        ),
+      );
+    }
+    return Icon(Icons.bolt, color: context.primaryAccent);
   }
 }
 
@@ -402,14 +670,23 @@ class SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text(text.toUpperCase(),
-              style: const TextStyle(
-                  color: AppColors.accent,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2)),
-          const Spacer(),
-          if (trailing != null) trailing!,
+          Expanded(
+            child: Text(
+              text.toUpperCase(),
+              softWrap: true,
+              style: TextStyle(
+                color: context.primaryAccent,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+          if (trailing != null) ...[
+            const SizedBox(width: 12),
+            trailing!,
+          ],
         ],
       ),
     );

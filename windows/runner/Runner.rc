@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.fragsaddicts" "\0"
-            VALUE "FileDescription", "frags_addicts_caisse" "\0"
+            VALUE "CompanyName", "com.tilly" "\0"
+            VALUE "FileDescription", "tilly" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "frags_addicts_caisse" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.fragsaddicts. All rights reserved." "\0"
-            VALUE "OriginalFilename", "frags_addicts_caisse.exe" "\0"
-            VALUE "ProductName", "frags_addicts_caisse" "\0"
+            VALUE "InternalName", "tilly" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 com.tilly. All rights reserved." "\0"
+            VALUE "OriginalFilename", "tilly.exe" "\0"
+            VALUE "ProductName", "tilly" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

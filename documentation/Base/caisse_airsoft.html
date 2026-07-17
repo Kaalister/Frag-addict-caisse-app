@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Caisse Airsoft</title>
+<title>Tilly</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -441,7 +441,7 @@ main{position:fixed;top:var(--header-h);left:0;right:0;bottom:var(--nav-h);overf
 <!-- ══ HEADER ══ -->
 <header>
   <div class="header-inner">
-    <h1>⚡ CAISSE AIRSOFT</h1>
+    <h1>⚡ TILLY</h1>
     <div class="session-chip" onclick="openSessionModal()">
       <span>PARTIE</span>
       <strong id="session-label">—</strong>
@@ -1777,7 +1777,7 @@ function pdfHeader(doc,sousTitre){
   const W=doc.internal.pageSize.getWidth();
   const cx=W/2;
   doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...noir);
-  doc.text('CAISSE AIRSOFT',cx,16,{align:'center'});
+  doc.text('TILLY',cx,16,{align:'center'});
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...gris);
   doc.text(date+(state.session?' — '+state.session:''),cx,22,{align:'center'});
   doc.setDrawColor(...lgris); doc.setLineWidth(0.3); doc.line(14,25,W-14,25); doc.setLineWidth(0.2);
@@ -1840,7 +1840,7 @@ function exportPDFBilan(){
       else{d.cell.styles.halign='right';}
     },
     margin:{left:14,right:14}});
-  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);const W2=doc.internal.pageSize.getWidth();const H2=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Caisse Airsoft — '+date+' — Page '+i+'/'+pages,W2/2,H2-5,{align:'center'});}
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){doc.setPage(i);const W2=doc.internal.pageSize.getWidth();const H2=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Tilly — '+date+' — Page '+i+'/'+pages,W2/2,H2-5,{align:'center'});}
   dlBlob(doc.output('blob'),'bilan_airsoft_'+date.replace(/\//g,'-')+'.pdf'); toast('✓ PDF Bilan téléchargé !');
 }
 
@@ -1924,7 +1924,7 @@ function exportPDFJoueurs(){
     },
     margin:{left:14,right:14}
   });
-  const pagesJ=doc.getNumberOfPages(); for(let i=1;i<=pagesJ;i++){doc.setPage(i);const WJ=doc.internal.pageSize.getWidth();const HJ=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Caisse Airsoft — '+date+' — Page '+i+'/'+pagesJ,WJ/2,HJ-5,{align:'center'});}
+  const pagesJ=doc.getNumberOfPages(); for(let i=1;i<=pagesJ;i++){doc.setPage(i);const WJ=doc.internal.pageSize.getWidth();const HJ=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Tilly — '+date+' — Page '+i+'/'+pagesJ,WJ/2,HJ-5,{align:'center'});}
   dlBlob(doc.output('blob'),'joueurs_airsoft_'+date.replace(/\//g,'-')+'.pdf'); toast('✓ PDF Joueurs téléchargé !');
 }
 
@@ -1956,7 +1956,7 @@ function exportPDFCaisse(){
   const fR=COUPURES.map(c=>{const nb=state.caisse?.['fin_'+c.val]||0;return[c.label,c.type==='billet'?'Billet':'Piece',nb,nb>0?(nb*c.val).toFixed(2)+' €':'—'];}).filter(r=>r[2]>0);
   if(fR.length) pdfAutoTable(doc,['COUPURE','TYPE','NB','SOUS-TOTAL'],fR,y);
   else{doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...gris);doc.text('Aucune coupure saisie',14,y+4);}
-  const pagesJ=doc.getNumberOfPages(); for(let i=1;i<=pagesJ;i++){doc.setPage(i);const WJ=doc.internal.pageSize.getWidth();const HJ=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Caisse Airsoft — '+date+' — Page '+i+'/'+pagesJ,WJ/2,HJ-5,{align:'center'});}
+  const pagesJ=doc.getNumberOfPages(); for(let i=1;i<=pagesJ;i++){doc.setPage(i);const WJ=doc.internal.pageSize.getWidth();const HJ=doc.internal.pageSize.getHeight();doc.setFontSize(7);doc.setTextColor(...gris);doc.text('Tilly — '+date+' — Page '+i+'/'+pagesJ,WJ/2,HJ-5,{align:'center'});}
   dlBlob(doc.output('blob'),'analyse_caisse_'+date.replace(/\//g,'-')+'.pdf'); toast('✓ PDF Analyse téléchargé !');
 }
 
@@ -2462,7 +2462,7 @@ function exportPDFKpi(){
 
   // ── PAGE 1 : En-tête + cartes + tableau ──
   doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(20,20,20);
-  doc.text('CAISSE AIRSOFT - KPI ACHATS & STOCK',W/2,14,{align:'center'});
+  doc.text('TILLY - KPI ACHATS & STOCK',W/2,14,{align:'center'});
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(110,110,110);
   doc.text(date+(state.session?' - '+state.session:''),W/2,20,{align:'center'});
   doc.setDrawColor(180,180,180); doc.setLineWidth(0.3); doc.line(M,23,W-M,23);
@@ -2605,7 +2605,7 @@ function exportPDFKpi(){
   for(let p=1;p<=nbPages;p++){
     doc.setPage(p);
     doc.setFontSize(7); doc.setTextColor(160,160,160);
-    doc.text('Caisse Airsoft - '+date+' - Page '+p+'/'+nbPages,W/2,290,{align:'center'});
+    doc.text('Tilly - '+date+' - Page '+p+'/'+nbPages,W/2,290,{align:'center'});
   }
 
   const fn='kpi_airsoft_'+date.split('/').join('-')+'.pdf';

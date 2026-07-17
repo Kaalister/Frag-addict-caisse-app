@@ -266,6 +266,494 @@ Future<void> showCreateSessionDialog(
   }
 }
 
+Future<void> showFirebaseSetupDialog(
+    BuildContext context, AppController controller,
+    {bool editProject = false}) async {
+  final result = await showDialog<FirebaseSyncResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _FirebaseSetupDialog(
+      controller: controller,
+      editProject: editProject,
+    ),
+  );
+  if (result != null && context.mounted) snack(context, result.message);
+}
+
+Future<void> showFirebaseHelpDialog(BuildContext context) async {
+  final openGuide = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.info_outline, color: AppColors.accent2),
+          SizedBox(width: 10),
+          Expanded(child: Text('À quoi sert Firebase ?')),
+        ],
+      ),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 540),
+        child: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Firebase est optionnel. Sans connexion, toutes les fonctions de caisse restent disponibles sur cet appareil.',
+              ),
+              SizedBox(height: 14),
+              _HelpDialogItem(
+                icon: Icons.sync,
+                text:
+                    'Synchroniser les données de caisse entre plusieurs appareils.',
+              ),
+              SizedBox(height: 10),
+              _HelpDialogItem(
+                icon: Icons.restore,
+                text:
+                    'Récupérer les données après une réinstallation ou sur un nouvel appareil.',
+              ),
+              SizedBox(height: 10),
+              _HelpDialogItem(
+                icon: Icons.lock_outline,
+                text:
+                    'Protéger chaque espace avec un compte email et mot de passe.',
+              ),
+              SizedBox(height: 14),
+              Text(
+                'Le tutoriel explique pas à pas comment créer le projet Firebase, activer Firestore et récupérer les codes Android ou Windows à coller dans l’application.',
+                style: TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Fermer'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, true),
+          icon: const Icon(Icons.open_in_new),
+          label: const Text('Ouvrir le tutoriel'),
+        ),
+      ],
+    ),
+  );
+
+  if (openGuide != true || !context.mounted) return;
+  try {
+    await openExternalUrl(_firebaseSetupGuideUrl);
+  } catch (error) {
+    if (context.mounted) {
+      snack(context, 'Impossible d’ouvrir le tutoriel : $error');
+    }
+  }
+}
+
+Future<void> showHelloAssoHelpDialog(BuildContext context,
+    {bool mealsEnabled = true}) async {
+  final openGuide = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Row(
+        children: [
+          Icon(Icons.info_outline, color: AppColors.accent2),
+          SizedBox(width: 10),
+          Expanded(child: Text('À quoi sert HelloAsso ?')),
+        ],
+      ),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 540),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                mealsEnabled
+                    ? 'HelloAsso est optionnel. Sans connexion, les joueurs et les repas peuvent toujours être saisis manuellement.'
+                    : 'HelloAsso est optionnel. Sans connexion, les joueurs peuvent toujours être saisis manuellement.',
+              ),
+              const SizedBox(height: 14),
+              _HelpDialogItem(
+                icon: Icons.event_available,
+                text: 'Retrouver les événements publiés par l’association.',
+              ),
+              const SizedBox(height: 10),
+              const _HelpDialogItem(
+                icon: Icons.group_add_outlined,
+                text: 'Importer les participants ayant réglé leur inscription.',
+              ),
+              if (mealsEnabled) ...[
+                const SizedBox(height: 10),
+                const _HelpDialogItem(
+                  icon: Icons.restaurant_outlined,
+                  text:
+                      'Récupérer les informations utiles à la préparation des repas.',
+                ),
+              ],
+              const SizedBox(height: 14),
+              const Text(
+                'Le tutoriel explique où trouver le nom public de l’association, le Client ID et le Client secret, puis comment les renseigner dans l’application.',
+                style: TextStyle(color: AppColors.muted, height: 1.4),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Fermer'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, true),
+          icon: const Icon(Icons.open_in_new),
+          label: const Text('Ouvrir le tutoriel'),
+        ),
+      ],
+    ),
+  );
+
+  if (openGuide != true || !context.mounted) return;
+  try {
+    await openExternalUrl(_helloAssoSetupGuideUrl);
+  } catch (error) {
+    if (context.mounted) {
+      snack(context, 'Impossible d’ouvrir le tutoriel : $error');
+    }
+  }
+}
+
+class _HelpDialogItem extends StatelessWidget {
+  const _HelpDialogItem({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: AppColors.accent),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+      ],
+    );
+  }
+}
+
+class _FirebaseSetupDialog extends StatefulWidget {
+  const _FirebaseSetupDialog({
+    required this.controller,
+    required this.editProject,
+  });
+
+  final AppController controller;
+  final bool editProject;
+
+  @override
+  State<_FirebaseSetupDialog> createState() => _FirebaseSetupDialogState();
+}
+
+class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
+  final configuration = TextEditingController();
+  final email = TextEditingController();
+  final password = TextEditingController();
+  late final TextEditingController apiKey;
+  late final TextEditingController appId;
+  late final TextEditingController messagingSenderId;
+  late final TextEditingController projectId;
+  late final TextEditingController authDomain;
+  late final TextEditingController storageBucket;
+  late final TextEditingController measurementId;
+  late FirebaseSettings settings;
+  late bool editingProject;
+  bool manualEntry = false;
+  bool obscurePassword = true;
+  bool loading = false;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    settings = widget.controller.firebaseSettings;
+    editingProject = widget.editProject || !settings.isConfigured;
+    apiKey = TextEditingController(text: settings.apiKey);
+    appId = TextEditingController(text: settings.appId);
+    messagingSenderId = TextEditingController(text: settings.messagingSenderId);
+    projectId = TextEditingController(text: settings.projectId);
+    authDomain = TextEditingController(text: settings.authDomain);
+    storageBucket = TextEditingController(text: settings.storageBucket);
+    measurementId = TextEditingController(text: settings.measurementId);
+  }
+
+  @override
+  void dispose() {
+    configuration.dispose();
+    email.dispose();
+    password.dispose();
+    apiKey.dispose();
+    appId.dispose();
+    messagingSenderId.dispose();
+    projectId.dispose();
+    authDomain.dispose();
+    storageBucket.dispose();
+    measurementId.dispose();
+    super.dispose();
+  }
+
+  FirebaseSettings _enteredSettings() {
+    if (!manualEntry) return parseFirebaseSettings(configuration.text);
+    return FirebaseSettings(
+      apiKey: apiKey.text,
+      appId: appId.text,
+      messagingSenderId: messagingSenderId.text,
+      projectId: projectId.text,
+      authDomain: authDomain.text,
+      storageBucket: storageBucket.text,
+      measurementId: measurementId.text,
+    );
+  }
+
+  Future<void> _activate() async {
+    if (loading) return;
+    if (email.text.trim().isEmpty || password.text.isEmpty) {
+      setState(() => error = 'Renseigne l’email et le mot de passe du compte.');
+      return;
+    }
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      if (editingProject) {
+        final enteredSettings = _enteredSettings();
+        await widget.controller.saveFirebaseSettings(enteredSettings);
+        settings = enteredSettings;
+        editingProject = false;
+      }
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email.text.trim(),
+        password: password.text,
+      );
+      final result = await widget.controller.connectFirebaseUser();
+      if (mounted) Navigator.pop(context, result);
+    } on FirebaseAuthException catch (exception) {
+      if (mounted) setState(() => error = _firebaseAuthError(exception));
+    } catch (exception) {
+      if (mounted) {
+        setState(() => error = '$exception'
+            .replaceFirst('Bad state: ', '')
+            .replaceFirst('FormatException: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Activer la synchronisation'),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 620),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (editingProject) ...[
+                const Text('1. Projet Firebase',
+                    style: TextStyle(fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                if (!manualEntry)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: configuration,
+                        minLines: 5,
+                        maxLines: 9,
+                        decoration: const InputDecoration(
+                          labelText: 'Configuration à coller',
+                          alignLabelWithHint: true,
+                          hintText:
+                              'Bloc firebaseConfig ou contenu de google-services.json',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: loading ? null : _pasteConfiguration,
+                          icon: const Icon(Icons.content_paste),
+                          label: const Text('Coller'),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  _buildManualFields(),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: loading
+                        ? null
+                        : () => setState(() => manualEntry = !manualEntry),
+                    icon: Icon(manualEntry ? Icons.content_paste : Icons.tune),
+                    label: Text(manualEntry
+                        ? 'Revenir au collage'
+                        : 'Options avancées'),
+                  ),
+                ),
+              ] else ...[
+                Row(
+                  children: [
+                    const Icon(Icons.cloud_done, color: AppColors.accent),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Projet ${settings.projectId}',
+                          style: const TextStyle(fontWeight: FontWeight.w900)),
+                    ),
+                    TextButton(
+                      onPressed: loading
+                          ? null
+                          : () => setState(() => editingProject = true),
+                      child: const Text('Changer'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              Text(
+                  editingProject
+                      ? '2. Compte utilisateur'
+                      : 'Compte utilisateur',
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: email,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                    labelText: 'Email', prefixIcon: Icon(Icons.mail)),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: password,
+                obscureText: obscurePassword,
+                onSubmitted: (_) => _activate(),
+                decoration: InputDecoration(
+                  labelText: 'Mot de passe',
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    tooltip: obscurePassword ? 'Afficher' : 'Masquer',
+                    onPressed: () =>
+                        setState(() => obscurePassword = !obscurePassword),
+                    icon: Icon(obscurePassword
+                        ? Icons.visibility
+                        : Icons.visibility_off),
+                  ),
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 10),
+                Text(error!, style: const TextStyle(color: AppColors.danger)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: loading ? null : () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton.icon(
+          onPressed: loading ? null : _activate,
+          icon: loading
+              ? const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.cloud_done),
+          label: const Text('Activer'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildManualFields() {
+    return Column(
+      children: [
+        TextField(
+            controller: apiKey,
+            decoration: const InputDecoration(labelText: 'API key *')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: appId,
+            decoration: const InputDecoration(labelText: 'App ID *')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: messagingSenderId,
+            keyboardType: TextInputType.number,
+            decoration:
+                const InputDecoration(labelText: 'Messaging sender ID *')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: projectId,
+            decoration: const InputDecoration(labelText: 'Project ID *')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: authDomain,
+            decoration:
+                const InputDecoration(labelText: 'Auth domain (optionnel)')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: storageBucket,
+            decoration:
+                const InputDecoration(labelText: 'Storage bucket (optionnel)')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: measurementId,
+            decoration:
+                const InputDecoration(labelText: 'Measurement ID (optionnel)')),
+      ],
+    );
+  }
+
+  Future<void> _pasteConfiguration() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.trim().isEmpty) {
+      if (mounted) setState(() => error = 'Le presse-papiers est vide.');
+      return;
+    }
+    configuration.text = text;
+    if (mounted) setState(() => error = null);
+  }
+}
+
+String _firebaseAuthError(FirebaseAuthException exception) {
+  switch (exception.code) {
+    case 'invalid-credential':
+    case 'wrong-password':
+    case 'user-not-found':
+      return 'Email ou mot de passe incorrect.';
+    case 'invalid-email':
+      return 'Adresse email invalide.';
+    case 'network-request-failed':
+      return 'Connexion réseau impossible.';
+    case 'too-many-requests':
+      return 'Trop de tentatives. Réessaie plus tard.';
+    default:
+      return exception.message ?? exception.code;
+  }
+}
+
 Future<void> showHelloAssoSettingsDialog(
     BuildContext context, AppController controller) async {
   final current = controller.helloAssoSettings;
@@ -453,7 +941,7 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
   final stock = TextEditingController(text: article?.stock.toString() ?? '0');
   final threshold =
       TextEditingController(text: article?.threshold.toString() ?? '5');
-  final categoryOptions = <String>[...controller.articleCategories]
+  final categoryOptions = <String>[...controller.activeArticleCategories]
       .map((category) => category.trim().toUpperCase())
       .where((category) => category.isNotEmpty)
       .toSet()
@@ -477,121 +965,125 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
       builder: (context, setState) {
         return AlertDialog(
           title: Text(article == null ? 'Nouvel article' : 'Modifier article'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(children: [
-                  SizedBox(
-                      width: 76,
-                      child: TextField(
-                          controller: icon,
-                          decoration:
-                              const InputDecoration(labelText: 'Icône'))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: TextField(
-                          controller: name,
-                          decoration: const InputDecoration(labelText: 'Nom'))),
-                ]),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: category,
-                  decoration: const InputDecoration(labelText: 'Catégorie'),
-                  items: [
-                    for (final option in categoryOptions)
-                      DropdownMenuItem(
-                        value: option,
-                        child: Text(option),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => category = value);
-                  },
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: type,
-                  decoration:
-                      const InputDecoration(labelText: 'Type d’article'),
-                  items: const [
-                    DropdownMenuItem(
-                        value: 'standard', child: Text('Article en stock')),
-                    DropdownMenuItem(
-                        value: 'location', child: Text('Location')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => type = value);
-                  },
-                ),
-                const SizedBox(height: 10),
-                TacticalCard(
-                  borderColor:
-                      type == 'location' ? AppColors.sumup : AppColors.border,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                  child: Row(
-                    children: [
-                      Icon(
-                          type == 'location'
-                              ? Icons.assignment_return
-                              : Icons.inventory_2,
-                          color: type == 'location'
-                              ? AppColors.sumup
-                              : AppColors.muted),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          type == 'location'
-                              ? 'Location : aucune sortie de stock automatique'
-                              : 'Type automatique : standard',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(
-                      child: TextField(
-                          controller: price,
-                          keyboardType: TextInputType.number,
-                          decoration:
-                              const InputDecoration(labelText: 'Prix public'))),
-                  const SizedBox(width: 8),
-                  Expanded(
-                      child: TextField(
-                          controller: memberPrice,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                              labelText: 'Prix adhérent'))),
-                ]),
-                const SizedBox(height: 10),
-                if (type == 'standard')
+          content: SizedBox(
+            width: min(MediaQuery.sizeOf(context).width - 48, 720),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Row(children: [
-                    Expanded(
+                    SizedBox(
+                        width: 76,
                         child: TextField(
-                            controller: stock,
-                            keyboardType: TextInputType.number,
+                            controller: icon,
                             decoration:
-                                const InputDecoration(labelText: 'Stock'))),
+                                const InputDecoration(labelText: 'Icône'))),
                     const SizedBox(width: 8),
                     Expanded(
                         child: TextField(
-                            controller: threshold,
-                            keyboardType: TextInputType.number,
+                            controller: name,
                             decoration:
-                                const InputDecoration(labelText: 'Seuil'))),
-                  ])
-                else
-                  const Text(
-                    'Une location reste facturable mais ne modifie jamais le stock.',
-                    style: TextStyle(color: AppColors.muted),
+                                const InputDecoration(labelText: 'Nom'))),
+                  ]),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: category,
+                    decoration: const InputDecoration(labelText: 'Catégorie'),
+                    items: [
+                      for (final option in categoryOptions)
+                        DropdownMenuItem(
+                          value: option,
+                          child: Text(option),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => category = value);
+                    },
                   ),
-              ],
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: type,
+                    decoration:
+                        const InputDecoration(labelText: 'Type d’article'),
+                    items: const [
+                      DropdownMenuItem(
+                          value: 'standard', child: Text('Article en stock')),
+                      DropdownMenuItem(
+                          value: 'location', child: Text('Location')),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => type = value);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  TacticalCard(
+                    borderColor:
+                        type == 'location' ? AppColors.sumup : AppColors.border,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    child: Row(
+                      children: [
+                        Icon(
+                            type == 'location'
+                                ? Icons.assignment_return
+                                : Icons.inventory_2,
+                            color: type == 'location'
+                                ? AppColors.sumup
+                                : AppColors.muted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            type == 'location'
+                                ? 'Location : aucune sortie de stock automatique'
+                                : 'Type automatique : standard',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    Expanded(
+                        child: TextField(
+                            controller: price,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Prix public'))),
+                    const SizedBox(width: 8),
+                    Expanded(
+                        child: TextField(
+                            controller: memberPrice,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                                labelText: 'Prix adhérent'))),
+                  ]),
+                  const SizedBox(height: 10),
+                  if (type == 'standard')
+                    Row(children: [
+                      Expanded(
+                          child: TextField(
+                              controller: stock,
+                              keyboardType: TextInputType.number,
+                              decoration:
+                                  const InputDecoration(labelText: 'Stock'))),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: TextField(
+                              controller: threshold,
+                              keyboardType: TextInputType.number,
+                              decoration:
+                                  const InputDecoration(labelText: 'Seuil'))),
+                    ])
+                  else
+                    const Text(
+                      'Une location reste facturable mais ne modifie jamais le stock.',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                ],
+              ),
             ),
           ),
           actions: [

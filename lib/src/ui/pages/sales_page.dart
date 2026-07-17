@@ -24,7 +24,7 @@ class CaissePage extends StatelessWidget {
         return Column(
           children: [
             SizedBox(
-                height: 150,
+                height: 176,
                 child: PlayerPanel(controller: controller, compact: true)),
             const Divider(height: 1, color: AppColors.border),
             Expanded(child: ProductsPanel(controller: controller)),
@@ -67,14 +67,42 @@ class _PlayerPanelState extends State<PlayerPanel> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SectionTitle(
-            'Joueur',
-            trailing: IconButton.filledTonal(
-              onPressed: () => showPlayerDialog(context, widget.controller),
-              icon: const Icon(Icons.person_add),
-              tooltip: 'Nouveau joueur',
+          if (widget.compact)
+            SizedBox(
+              height: 40,
+              child: Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Text(
+                      'JOUEUR',
+                      style: TextStyle(
+                        color: context.primaryAccent,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton.filledTonal(
+                    onPressed: () =>
+                        showPlayerDialog(context, widget.controller),
+                    icon: const Icon(Icons.person_add),
+                    tooltip: 'Nouveau joueur',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            )
+          else
+            SectionTitle(
+              'Joueur',
+              trailing: IconButton.filledTonal(
+                onPressed: () => showPlayerDialog(context, widget.controller),
+                icon: const Icon(Icons.person_add),
+                tooltip: 'Nouveau joueur',
+              ),
             ),
-          ),
           TextField(
             controller: searchController,
             decoration: InputDecoration(
@@ -128,8 +156,12 @@ class _PlayerPanelState extends State<PlayerPanel> {
                                   widget.controller.selectPlayer(player),
                               child: TacticalCard(
                                 borderColor: selected
-                                    ? AppColors.accent
+                                    ? context.primaryAccent
                                     : AppColors.border,
+                                padding: widget.compact
+                                    ? const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 3)
+                                    : const EdgeInsets.all(12),
                                 child: Row(
                                   children: [
                                     Icon(
@@ -156,6 +188,10 @@ class _PlayerPanelState extends State<PlayerPanel> {
                                           player: player),
                                       icon: const Icon(Icons.edit, size: 18),
                                       visualDensity: VisualDensity.compact,
+                                      constraints: widget.compact
+                                          ? const BoxConstraints.tightFor(
+                                              width: 36, height: 36)
+                                          : null,
                                     ),
                                   ],
                                 ),
@@ -195,11 +231,11 @@ class ProductsPanel extends StatelessWidget {
                 showCheckmark: false,
                 label: Text(cat),
                 labelStyle: TextStyle(
-                  color: selected ? Colors.black : AppColors.muted,
+                  color: selected ? context.onPrimaryAccent : AppColors.muted,
                   fontWeight: FontWeight.w800,
                 ),
                 onSelected: (_) => controller.setCategory(cat),
-                selectedColor: AppColors.accent,
+                selectedColor: context.primaryAccent,
               );
             },
           ),
@@ -283,8 +319,8 @@ class ProductsPanel extends StatelessWidget {
                             child: Text(price == 0 ? 'Libre' : money(price),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: AppColors.accent,
+                                style: TextStyle(
+                                    color: context.primaryAccent,
                                     fontWeight: FontWeight.w900)),
                           ),
                           if (controller.memberTariff &&
@@ -336,15 +372,15 @@ class CartPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.shopping_cart, color: AppColors.accent),
+              Icon(Icons.shopping_cart, color: context.primaryAccent),
               const SizedBox(width: 8),
               Text('PANIER (${controller.cartCount})',
                   style: const TextStyle(
                       fontWeight: FontWeight.w900, letterSpacing: 1.2)),
               const Spacer(),
               Text(money(controller.cartTotal),
-                  style: const TextStyle(
-                      color: AppColors.accent,
+                  style: TextStyle(
+                      color: context.primaryAccent,
                       fontWeight: FontWeight.w900,
                       fontSize: 18)),
             ],
@@ -412,8 +448,8 @@ class CartPanel extends StatelessWidget {
                                   width: 64,
                                   child: Text(money(item.price * item.quantity),
                                       textAlign: TextAlign.right,
-                                      style: const TextStyle(
-                                          color: AppColors.accent))),
+                                      style: TextStyle(
+                                          color: context.primaryAccent))),
                             ],
                           ),
                         ),

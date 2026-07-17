@@ -1,0 +1,356 @@
+# Mise en place de l'application
+
+Ce guide explique uniquement comment installer l'application et configurer
+Firebase pour qu'une association puisse utiliser sa propre synchronisation.
+
+L'application est fournie deja compilee. L'association n'a pas besoin de
+compiler Flutter ni d'utiliser GitHub Actions.
+
+## 1. Installer l'application
+
+### Android
+
+1. Recuperer le fichier APK fourni.
+2. Ouvrir le fichier APK sur le telephone ou la tablette.
+3. Si Android le demande, autoriser l'installation depuis cette source.
+4. Installer l'application.
+5. Ouvrir l'application.
+
+### Windows
+
+1. Recuperer l'installateur Windows fourni.
+2. Lancer le fichier `.exe`.
+3. Si Windows affiche une alerte SmartScreen, verifier que le fichier vient
+   bien du vendeur, puis continuer l'installation.
+4. Ouvrir l'application depuis le menu Demarrer ou le raccourci cree.
+
+## 2. Mettre a jour l'application
+
+Pour conserver les donnees :
+
+1. Ouvrir l'application actuelle.
+2. Exporter une sauvegarde JSON depuis l'ecran de configuration.
+3. Installer la nouvelle version par-dessus l'ancienne.
+4. Ne pas desinstaller l'application.
+5. Ne pas effacer les donnees de l'application.
+
+## 3. Comprendre Firebase
+
+Firebase est optionnel.
+
+Sans Firebase, l'application fonctionne en local sur l'appareil.
+
+Avec Firebase, l'association peut :
+
+- synchroniser les donnees entre plusieurs applications ;
+- recuperer les donnees sur un autre appareil ;
+- utiliser plusieurs appareils avec le meme compte Firebase.
+
+Le modele prevu est simple : chaque association cree son propre projet Firebase
+et utilise son propre compte.
+
+Pour une premiere version, il est recommande d'utiliser un seul compte Firebase
+partage par association.
+
+Deux informations sont demandees pendant l'activation :
+
+- la configuration du projet indique a l'application quel projet Firebase
+  utiliser ;
+- l'email et le mot de passe autorisent l'acces aux donnees de ce projet.
+
+L'application reunit ces deux etapes dans un seul ecran. La configuration du
+projet n'est pas un deuxieme mot de passe.
+
+## 4. Creer le projet Firebase
+
+1. Aller sur https://console.firebase.google.com/
+2. Cliquer sur `Ajouter un projet`.
+3. Donner un nom au projet, par exemple `caisse-mon-association`.
+4. Desactiver Google Analytics si l'association n'en a pas besoin.
+5. Terminer la creation du projet.
+
+Le plan gratuit Firebase peut suffire pour un usage associatif simple, selon
+les quotas Firebase en vigueur. Les tarifs et limites doivent toujours etre
+verifies sur la page officielle :
+
+https://firebase.google.com/pricing
+
+## 5. Activer l'authentification
+
+1. Dans Firebase Console, ouvrir `Authentication`.
+2. Cliquer sur `Commencer`.
+3. Ouvrir `Sign-in method`.
+4. Activer `Email/Password`.
+5. Enregistrer.
+
+Documentation officielle :
+
+https://firebase.google.com/docs/auth/flutter/password-auth
+
+## 6. Creer le compte de l'association
+
+1. Aller dans `Authentication > Users`.
+2. Cliquer sur `Ajouter un utilisateur`.
+3. Saisir l'email de l'association.
+4. Choisir un mot de passe fort.
+5. Conserver l'email et le mot de passe dans un endroit sur.
+
+Ce compte servira a se connecter dans l'application.
+
+## 7. Activer Firestore
+
+1. Dans Firebase Console, ouvrir `Firestore Database`.
+2. Cliquer sur `Creer une base de donnees`.
+3. Choisir le mode production si Firebase le propose.
+4. Choisir une region proche de l'association.
+5. Terminer la creation.
+
+## 8. Configurer les regles Firestore
+
+Dans `Firestore Database > Rules`, coller des regles limitees a l'utilisateur
+connecte.
+
+Exemple pour la version simple :
+
+```txt
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /organizations/default/users/{userId}/snapshots/{snapshotId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+Cliquer ensuite sur `Publier`. Sans cette action, les nouvelles regles ne sont
+pas utilisees par Firebase. Attendre une minute avant le premier essai si les
+regles viennent d'etre remplacees.
+
+Ces regles signifient qu'un compte Firebase ne peut lire et ecrire que ses
+propres donnees.
+
+Documentation officielle :
+
+https://firebase.google.com/docs/firestore/security/get-started
+
+## 9. Recuperer la configuration Firebase
+
+La configuration depend de la plateforme. Android et Windows appartiennent au
+meme projet Firebase, mais utilisent deux applications Firebase differentes.
+
+### 9.1 Android
+
+1. Revenir a la vue d'ensemble du projet Firebase.
+2. Cliquer sur `Ajouter une application`, puis sur l'icone Android.
+3. Saisir exactement le package :
+
+```txt
+com.tilly.caisse
+```
+
+4. Choisir un surnom libre, par exemple `Caisse Android`.
+5. Laisser le certificat SHA vide.
+6. Enregistrer l'application.
+7. Telecharger `google-services.json`.
+8. Ouvrir le fichier avec un editeur de texte et copier tout son contenu.
+
+Il ne faut pas ajouter le fichier dans l'APK ni modifier Gradle : l'application
+de caisse est deja compilee et lit directement le contenu colle.
+
+Le fichier reste disponible dans `Parametres du projet > General > Vos
+applications`.
+
+Documentation officielle :
+
+https://firebase.google.com/docs/android/setup
+
+### 9.2 Windows
+
+Firebase ne propose pas d'application Windows dans ce parcours. La caisse
+Windows utilise une application Firebase Web.
+
+1. Revenir a la vue d'ensemble du projet Firebase.
+2. Cliquer sur `Ajouter une application`, puis sur l'icone Web `</>`.
+3. Choisir un surnom libre, par exemple `Caisse Windows`.
+4. Ne pas activer Firebase Hosting.
+5. Enregistrer l'application.
+6. Reperer puis copier le bloc complet :
+
+```js
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};
+```
+
+Il n'est pas necessaire d'executer les commandes `npm` proposees. Le bloc reste
+disponible dans `Parametres du projet > General > Vos applications >
+Configuration du SDK`.
+
+Documentation officielle :
+
+https://firebase.google.com/docs/web/setup
+
+## 10. Renseigner Firebase dans l'application
+
+Dans l'application :
+
+1. Ouvrir `Config > Firebase`.
+2. Cliquer sur `Activer Firebase`.
+3. Cliquer sur `Coller`, ou coller manuellement le contenu correspondant a la
+   plateforme : `google-services.json` sur Android ou `firebaseConfig` sur
+   Windows.
+4. Saisir l'email et le mot de passe crees dans Firebase.
+5. Cliquer sur `Activer`.
+6. Verifier que l'etat indique `Synchronisation active`.
+7. Cliquer sur `Synchroniser`.
+
+La saisie champ par champ reste disponible dans `Options avancees`, mais elle
+n'est normalement pas necessaire.
+
+### 10.1 Verifier la premiere synchronisation
+
+1. Verifier que l'application indique `Donnees envoyees vers Firebase` ou
+   `Donnees deja synchronisees`.
+2. Dans Firebase Console, ouvrir `Firestore Database > Data`.
+3. Verifier la presence du chemin :
+
+```txt
+organizations/default/users/{uid}/snapshots/caisse-main
+```
+
+Une version de developpement utilise `caisse-dev` au lieu de `caisse-main`.
+
+## 11. Utiliser un autre appareil
+
+1. Installer l'application sur le nouvel appareil.
+2. Utiliser la configuration adaptee a sa plateforme : configuration Android
+   pour Android, configuration Web pour Windows.
+3. Se connecter avec le meme compte Firebase.
+4. Cliquer sur `Synchroniser`.
+5. Si Firebase contient des donnees plus recentes, confirmer la restauration.
+6. Verifier que les donnees ont ete recuperees.
+
+Avant une restauration depuis Firebase, faire une sauvegarde JSON si
+l'application le propose.
+
+### 11.1 Erreurs courantes
+
+`Configuration non reconnue` : recopier le bloc `firebaseConfig` complet ou le
+contenu complet de `google-services.json`.
+
+`Email ou mot de passe incorrect` : verifier que Email/Password est active et
+que l'utilisateur existe dans `Authentication > Users`.
+
+`Acces Firestore refuse` : verifier que les regles ont ete collees, que le
+chemin contient `organizations/default/users`, puis cliquer sur `Publier`.
+
+`Aucune donnee` : verifier que le premier appareil a deja synchronise et que
+les deux appareils utilisent le meme compte Firebase.
+
+## 12. Configurer HelloAsso
+
+HelloAsso permet d'importer les evenements et les participants payants dans
+l'application.
+
+La configuration HelloAsso demande 4 informations :
+
+- `Organization slug`
+- `Client ID`
+- `Client secret`
+- environnement : `Production` ou `Sandbox`
+
+Pour une association en utilisation reelle, choisir `Production`.
+
+### 12.1 Trouver l'organization slug
+
+L'`Organization slug` correspond a l'identifiant public de l'association dans
+les URL HelloAsso.
+
+Exemple :
+
+```txt
+https://www.helloasso.com/associations/mon-association
+```
+
+Dans cet exemple, le slug est :
+
+```txt
+mon-association
+```
+
+On peut le retrouver :
+
+1. en ouvrant la page publique HelloAsso de l'association ;
+2. en regardant l'URL apres `/associations/` ;
+3. ou dans les liens publics des formulaires et evenements HelloAsso.
+
+### 12.2 Trouver le Client ID et le Client secret
+
+1. Se connecter au compte HelloAsso de l'association.
+2. Dans le menu de gauche, ouvrir `Mon compte`.
+3. Ouvrir `Integrations et API`.
+4. Creer la cle API si aucune cle n'existe encore.
+5. Copier le `Client ID`.
+6. Copier le `Client secret` et le conserver dans un gestionnaire de mots de
+   passe.
+
+Une cle creee depuis le compte d'une association donne acces aux donnees de
+cette association. Si la rubrique n'apparait pas, verifier que le compte
+connecte dispose bien des droits d'administration de l'association.
+
+Documentation officielle :
+
+https://dev.helloasso.com/docs/obtenir-une-cl%C3%A9-api
+
+### 12.3 Renseigner HelloAsso dans l'application
+
+Dans l'application :
+
+1. Ouvrir `Config`.
+2. Aller dans la section `HelloAsso`.
+3. Ouvrir `Configuration HelloAsso`.
+4. Renseigner `Organization slug`.
+5. Renseigner `Client ID`.
+6. Renseigner `Client secret`.
+7. Choisir `Production`.
+8. Enregistrer.
+9. Cliquer sur le bouton de test de connexion HelloAsso si disponible.
+
+Si la connexion fonctionne, l'application doit pouvoir afficher les evenements
+HelloAsso lors de la creation d'une session.
+
+### 12.4 Utiliser HelloAsso pendant la creation d'une session
+
+1. Creer une nouvelle session dans l'application.
+2. Choisir l'evenement HelloAsso a lier.
+3. Importer les participants.
+4. Verifier que les joueurs ou inscrits apparaissent correctement.
+
+### 12.5 Securite du secret HelloAsso
+
+Le `Client secret` doit rester confidentiel.
+
+Ne pas le publier :
+
+- dans un depot GitHub ;
+- dans une capture d'ecran ;
+- dans une documentation publique ;
+- dans un message partage a des personnes non autorisees.
+
+Le secret HelloAsso ne doit pas etre synchronise dans Firebase et ne doit pas
+etre inclus dans les exports JSON.
+
+## 13. Limite importante
+
+L'application est un outil de suivi de caisse associative.
+
+Elle n'est pas un logiciel de caisse certifie et ne remplace pas les
+obligations comptables ou fiscales de l'association.

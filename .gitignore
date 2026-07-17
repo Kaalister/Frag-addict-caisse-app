@@ -46,4 +46,8 @@ a_supprimer/
 # Release output
 dist/
 
-documentation/
+documentation/*
+!documentation/*.md
+!documentation/Base/
+documentation/Base/*
+!documentation/Base/caisse_airsoft.html

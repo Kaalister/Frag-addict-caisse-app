@@ -16,12 +16,15 @@ class AppController extends ChangeNotifier {
   DateTime? lastSyncedAt;
   int tab = 0;
   SessionRecord? activeSession;
+  AppSettings appSettings = const AppSettings();
   List<SessionRecord> sessions = [];
   String categoryFilter = 'TOUS';
   bool forceMemberTariff = false;
   double donation = 0;
   String? selectedPlayerId;
   HelloAssoSettings helloAssoSettings = const HelloAssoSettings();
+  FirebaseSettings firebaseSettings =
+      FirebaseBootstrap.settings ?? const FirebaseSettings();
   List<Player> allPlayers = [];
   List<Player> players = [];
   List<Article> articles = defaultArticles();
@@ -36,9 +39,13 @@ class AppController extends ChangeNotifier {
   Map<String, int> cashEnd = {};
 
   String get session => activeSession?.name ?? '';
+  String get associationName => appSettings.associationName;
+  String get appIconPath => appSettings.appIconPath;
+  Color get primaryColor => appSettings.primaryColor;
+  bool get mealsEnabled => appSettings.mealsEnabled;
   String get firebaseUserLabel =>
-      FirebaseAuth.instance.currentUser?.email ??
-      FirebaseAuth.instance.currentUser?.uid ??
+      FirebaseBootstrap.currentUser?.email ??
+      FirebaseBootstrap.currentUser?.uid ??
       '';
   bool get firebaseAvailable => _syncService.isAvailable;
   Player? get selectedPlayer =>
@@ -54,20 +61,28 @@ class AppController extends ChangeNotifier {
       selectedPlayer != null && hasPendingPayment && cartStockShortages.isEmpty;
   List<StockShortage> get cartStockShortages =>
       _stockService.shortages(_stockService.cartRequirements(cart, articles));
-  List<String> get categories => ['TOUS', ...articleCategories];
-  List<Article> get visibleArticles => categoryFilter == 'TOUS'
+  List<String> get activeArticleCategories => mealsEnabled
+      ? articleCategories
+      : articleCategories.where((category) => category != 'REPAS').toList();
+  List<String> get categories => ['TOUS', ...activeArticleCategories];
+  List<Article> get activeArticles => mealsEnabled
       ? articles
-      : articles.where((a) => a.category == categoryFilter).toList();
-  List<Article> get mealArticles =>
-      articles.where((article) => article.category == 'REPAS').toList();
+      : articles.where((article) => article.category != 'REPAS').toList();
+  List<Article> get visibleArticles => categoryFilter == 'TOUS'
+      ? activeArticles
+      : activeArticles.where((a) => a.category == categoryFilter).toList();
+  List<Article> get mealArticles => mealsEnabled
+      ? articles.where((article) => article.category == 'REPAS').toList()
+      : const <Article>[];
   List<Article> get drinkArticles =>
       articles.where((article) => article.category == 'BOISSONS').toList();
   List<Article> get snackArticles =>
       articles.where((article) => article.category == 'SNACKING').toList();
+  bool isMainTabVisible(String id) => appSettings.isMainTabVisible(id);
 
   Future<void> load() async {
     try {
-      await _database.setUserScope(FirebaseAuth.instance.currentUser?.uid);
+      await _database.setUserScope(FirebaseBootstrap.currentUser?.uid);
       await _loadLocalState();
     } catch (_) {
       articles = defaultArticles();
@@ -93,6 +108,7 @@ class AppController extends ChangeNotifier {
       await _database.setActiveSessionId(activeSession!.id);
     }
     final storedHelloAssoSettings = await _database.loadHelloAssoSettings();
+    appSettings = await _database.loadAppSettings();
     helloAssoSettings =
         await _secureSettings.loadHelloAssoSettings(storedHelloAssoSettings);
     if (storedHelloAssoSettings.clientSecret.trim().isNotEmpty) {
@@ -118,7 +134,7 @@ class AppController extends ChangeNotifier {
     donation = 0;
     selectedPlayerId = null;
     forceMemberTariff = false;
-    categoryFilter = 'TOUS';
+    _normalizeCategoryFilter();
     if (storedArticles.isEmpty) {
       await persist(markUpdated: false);
     }
@@ -184,7 +200,7 @@ class AppController extends ChangeNotifier {
       notifyListeners();
       return result;
     }
-    final user = FirebaseAuth.instance.currentUser;
+    final user = FirebaseBootstrap.currentUser;
     if (user == null) {
       const result = FirebaseSyncResult(
           FirebaseSyncAction.noUser, 'Connexion Firebase requise');
@@ -244,6 +260,47 @@ class AppController extends ChangeNotifier {
     lastSyncedAt = null;
     syncStatus = 'Connexion Firebase requise';
     notifyListeners();
+  }
+
+  Future<void> saveFirebaseSettings(FirebaseSettings settings) async {
+    if (!settings.isConfigured) {
+      throw const FormatException('Les quatre champs obligatoires sont requis');
+    }
+    syncing = true;
+    syncStatus = 'Configuration de Firebase';
+    notifyListeners();
+    try {
+      await _secureSettings.saveFirebaseSettings(settings);
+      await FirebaseBootstrap.reconfigure(settings);
+      firebaseSettings = settings;
+      await _database.setUserScope(null);
+      await _loadLocalState();
+      if (!FirebaseBootstrap.initialized) {
+        throw StateError(FirebaseBootstrap.error ??
+            'Impossible d initialiser Firebase avec cette configuration');
+      }
+      syncStatus = 'Firebase configuré, connexion utilisateur requise';
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> resetFirebaseSettings() async {
+    syncing = true;
+    notifyListeners();
+    try {
+      await FirebaseBootstrap.reset();
+      await _secureSettings.clearFirebaseSettings();
+      firebaseSettings = const FirebaseSettings();
+      await _database.setUserScope(null);
+      await _loadLocalState();
+      lastSyncedAt = null;
+      syncStatus = 'Firebase non configuré';
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
   }
 
   Future<void> refreshSessionSales() async {
@@ -317,11 +374,16 @@ class AppController extends ChangeNotifier {
     salesBySession = {importedSession.id: List<Sale>.of(sales)};
     cashStart = _parseCashMap(state['cashStart']);
     cashEnd = _parseCashMap(state['cashEnd']);
+    final importedAppSettings = state['appSettings'];
+    if (importedAppSettings is Map) {
+      appSettings =
+          AppSettings.fromJson(Map<String, dynamic>.from(importedAppSettings));
+    }
     cart.clear();
     donation = 0;
     selectedPlayerId = null;
     forceMemberTariff = false;
-    categoryFilter = 'TOUS';
+    _normalizeCategoryFilter();
     await persist();
     notifyListeners();
   }
@@ -354,6 +416,42 @@ class AppController extends ChangeNotifier {
   void setTab(int value) {
     tab = value;
     notifyListeners();
+  }
+
+  Future<void> setAssociationName(String value) async {
+    final name = value.trim().isEmpty ? 'TILLY' : value.trim();
+    appSettings = appSettings.copyWith(associationName: name);
+    notifyListeners();
+    await persist();
+  }
+
+  Future<void> setAppIconPath(String value) async {
+    appSettings = appSettings.copyWith(appIconPath: value.trim());
+    notifyListeners();
+    await persist();
+  }
+
+  Future<void> setPrimaryColor(Color value) async {
+    appSettings = appSettings.copyWith(primaryColorValue: value.toARGB32());
+    notifyListeners();
+    await persist();
+  }
+
+  Future<void> setMainTabVisible(String id, bool visible) async {
+    if (!AppTabIds.configurable.contains(id)) return;
+    final visibility = <String, bool>{...appSettings.mainTabVisibility};
+    visibility[id] = visible;
+    appSettings = appSettings.copyWith(mainTabVisibility: visibility);
+    notifyListeners();
+    await persist();
+  }
+
+  Future<void> setMealsEnabled(bool enabled) async {
+    appSettings = appSettings.copyWith(mealsEnabled: enabled);
+    _normalizeCategoryFilter();
+    if (!enabled && tab == 1) tab = 0;
+    notifyListeners();
+    await persist();
   }
 
   Future<void> setSession(String value) async {
@@ -410,7 +508,7 @@ class AppController extends ChangeNotifier {
         allPlayers: allPlayers,
         sessionPlayers: players,
       );
-      if (registrant.hasMeal) {
+      if (mealsEnabled && registrant.hasMeal) {
         final mealArticle = mealArticles.firstOrNull;
         if (mealArticle != null) {
           meals.add(_mealService.helloAssoMeal(
@@ -432,7 +530,7 @@ class AppController extends ChangeNotifier {
     donation = 0;
     selectedPlayerId = null;
     forceMemberTariff = false;
-    categoryFilter = 'TOUS';
+    _normalizeCategoryFilter();
     notifyListeners();
     await persist();
   }
@@ -482,7 +580,7 @@ class AppController extends ChangeNotifier {
     donation = 0;
     selectedPlayerId = null;
     forceMemberTariff = false;
-    categoryFilter = 'TOUS';
+    _normalizeCategoryFilter();
   }
 
   Future<void> addPlayer(
@@ -574,7 +672,14 @@ class AppController extends ChangeNotifier {
 
   void setCategory(String category) {
     categoryFilter = category;
+    _normalizeCategoryFilter();
     notifyListeners();
+  }
+
+  void _normalizeCategoryFilter() {
+    if (categoryFilter != 'TOUS' && !categories.contains(categoryFilter)) {
+      categoryFilter = 'TOUS';
+    }
   }
 
   void addToCart(Article article) {
@@ -673,6 +778,9 @@ class AppController extends ChangeNotifier {
     required String note,
     String payment = '',
   }) async {
+    if (!mealsEnabled) {
+      throw StateError('Le module repas est désactivé');
+    }
     final meal = _mealService.createMealOrder(
       player: player,
       source: source,
@@ -961,12 +1069,30 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> resetAll() async {
+    final created = SessionRecord(
+      id: makeId('session'),
+      name: 'Nouvelle partie',
+      eventDate: DateTime.now(),
+    );
+    await _database.resetBusinessData();
+    sessions = [created];
+    activeSession = created;
+    allPlayers.clear();
     players.clear();
+    articles = defaultArticles();
+    articleCategories = defaultArticleCategories();
     sales.clear();
+    salesBySession = {created.id: []};
     meals.clear();
+    stockMovements.clear();
+    pendingStockMovements.clear();
+    cashStart.clear();
+    cashEnd.clear();
     cart.clear();
     donation = 0;
     selectedPlayerId = null;
+    forceMemberTariff = false;
+    categoryFilter = 'TOUS';
     notifyListeners();
     await persist();
   }
@@ -1012,6 +1138,7 @@ class AppController extends ChangeNotifier {
         'identity': VisualIdentity.name,
         'state': {
           'activeSession': activeSession?.toJson(),
+          'appSettings': appSettings.toJson(),
           'sessions': sessions.map((e) => e.toJson()).toList(),
           'players': allPlayers.map((e) => e.toJson()).toList(),
           'activeSessionPlayers': players.map((e) => e.toJson()).toList(),

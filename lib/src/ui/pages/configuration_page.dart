@@ -7,7 +7,7 @@ class ArticlesPricePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final categories = controller.articleCategories;
+    final categories = controller.activeArticleCategories;
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
@@ -112,7 +112,7 @@ class ArticlesPricePage extends StatelessWidget {
   }
 }
 
-class ConfigPage extends StatelessWidget {
+class ConfigPage extends StatefulWidget {
   const ConfigPage({
     required this.controller,
     required this.updateResult,
@@ -129,60 +129,456 @@ class ConfigPage extends StatelessWidget {
   final Future<void> Function(AppUpdateInfo update) onOpenUpdate;
 
   @override
+  State<ConfigPage> createState() => _ConfigPageState();
+}
+
+class _ConfigPageState extends State<ConfigPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  AppController get controller => widget.controller;
+  AppUpdateResult? get updateResult => widget.updateResult;
+  bool get checkingUpdate => widget.checkingUpdate;
+  VoidCallback get onCheckUpdate => widget.onCheckUpdate;
+  Future<void> Function(AppUpdateInfo update) get onOpenUpdate =>
+      widget.onOpenUpdate;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 6, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionTitle('Configuration'),
-        const SectionTitle('Mises à jour'),
-        ConfigActionZone(
-          borderColor: updateResult?.requiresUpdate == true
-              ? AppColors.warn
-              : AppColors.accent2,
-          title: _updateStatusTitle(),
-          description: _updateStatusDescription(),
-          action: Wrap(
-            spacing: 8,
-            children: [
-              if (updateResult?.update != null)
-                FilledButton.tonalIcon(
-                  onPressed: () => onOpenUpdate(updateResult!.update!),
-                  icon: const Icon(Icons.download),
-                  label: Text(
-                    Platform.isAndroid ? 'Télécharger APK' : 'Télécharger',
-                  ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(12, 0, 12, 0),
+          child: SectionTitle('Configuration'),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Material(
+            color: AppColors.surface,
+            shape: RoundedRectangleBorder(
+              side: const BorderSide(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelColor: AppColors.text,
+              unselectedLabelColor: AppColors.muted,
+              indicator: const BoxDecoration(color: AppColors.surface2),
+              tabs: const [
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.tune, title: 'Personnalisation'),
                 ),
-              OutlinedButton.icon(
-                onPressed: checkingUpdate ? null : onCheckUpdate,
-                icon: checkingUpdate
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
-                label: const Text('Vérifier'),
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.system_update, title: 'Mises à jour'),
+                ),
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.cloud_sync, title: 'Firebase'),
+                ),
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.event_available, title: 'HelloAsso'),
+                ),
+                Tab(
+                  child:
+                      _ConfigTabLabel(icon: Icons.backup, title: 'Sauvegarde'),
+                ),
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.warning_amber, title: 'Remise à zéro'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _ConfigTabBody(children: _buildPersonalizationSections(context)),
+              _ConfigTabBody(
+                children: [
+                  const SectionTitle('Mises à jour'),
+                  _buildUpdateSection(),
+                ],
+              ),
+              _ConfigTabBody(children: _buildFirebaseSections(context)),
+              _ConfigTabBody(
+                children: [
+                  const SectionTitle('HelloAsso'),
+                  _buildHelloAssoSection(context),
+                ],
+              ),
+              _ConfigTabBody(
+                children: [
+                  const SectionTitle('Sauvegarde & restauration'),
+                  _buildExportSection(context),
+                  const SizedBox(height: 8),
+                  _buildRestoreSection(context),
+                ],
+              ),
+              _ConfigTabBody(children: _buildResetSections(context)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildPersonalizationSections(BuildContext context) {
+    return [
+      const SectionTitle('Personnalisation'),
+      ConfigSection(
+        title: 'Identité',
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _AppIconPreview(controller: controller),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Nom de l’association',
+                        style: TextStyle(
+                            color: AppColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text(controller.associationName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w900)),
+                  ],
+                ),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _editAssociationName(context),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Renommer'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: () => _pickAppIcon(context),
+                    icon: const Icon(Icons.image),
+                    label: const Text('Choisir image'),
+                  ),
+                  if (controller.appIconPath.isNotEmpty)
+                    IconButton.outlined(
+                      tooltip: 'Retirer l’image',
+                      onPressed: () => controller.setAppIconPath(''),
+                      icon: const Icon(Icons.close),
+                    ),
+                ],
               ),
             ],
           ),
         ),
-        const SectionTitle('Firebase'),
-        ConfigActionZone(
-          borderColor:
-              controller.firebaseAvailable ? AppColors.accent : AppColors.warn,
-          title: controller.firebaseAvailable
-              ? 'Synchronisation active'
-              : 'Synchronisation inactive',
-          description: controller.firebaseAvailable
-              ? '${controller.firebaseUserLabel} · ${controller.syncStatus}${controller.lastSyncedAt == null ? '' : ' · ${dateLabel(controller.lastSyncedAt!)} ${timeLabel(controller.lastSyncedAt!)}'}'
-              : (FirebaseBootstrap.error ??
-                  'Connecte-toi avec un compte Firebase pour charger la caisse liée à cet utilisateur.'),
-          action: Wrap(
-            spacing: 8,
+      ),
+      const SizedBox(height: 12),
+      ConfigSection(
+        title: 'Couleur primaire',
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              for (final color in _themeColorPresets)
+                _ThemeColorSwatch(
+                  color: color,
+                  selected:
+                      controller.primaryColor.toARGB32() == color.toARGB32(),
+                  onTap: () => controller.setPrimaryColor(color),
+                ),
+              OutlinedButton.icon(
+                onPressed: () => _editPrimaryColor(context),
+                icon: const Icon(Icons.palette_outlined),
+                label: const Text('Personnalisée'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => controller.setPrimaryColor(AppColors.accent),
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Réinitialiser'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height: 12),
+      ConfigSection(
+        title: 'Onglets affichés',
+        child: Column(
+          children: [
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.meals,
+              icon: Icons.restaurant,
+              title: 'Repas',
+              disabled: !controller.mealsEnabled,
+            ),
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.players,
+              icon: Icons.groups,
+              title: 'Joueurs',
+            ),
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.cash,
+              icon: Icons.payments,
+              title: 'Caisse',
+            ),
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.stats,
+              icon: Icons.trending_up,
+              title: 'Stats',
+            ),
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.bilan,
+              icon: Icons.bar_chart,
+              title: 'Bilan',
+            ),
+            _MainTabSwitch(
+              controller: controller,
+              id: AppTabIds.articles,
+              icon: Icons.inventory_2,
+              title: 'Articles',
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      ConfigSection(
+        title: 'Modules',
+        child: SwitchListTile(
+          secondary: const Icon(Icons.restaurant_menu),
+          title: const Text('Activer les repas'),
+          subtitle: const Text('Masque le module et la catégorie REPAS'),
+          value: controller.mealsEnabled,
+          onChanged: controller.setMealsEnabled,
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _editPrimaryColor(BuildContext context) async {
+    var draftColor = _hexColor(controller.primaryColor);
+    String? error;
+    final value = await showDialog<Color>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Couleur primaire'),
+          content: TextFormField(
+            initialValue: draftColor,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: 'Couleur hex',
+              hintText: '#C8F135',
+              errorText: error,
+            ),
+            textInputAction: TextInputAction.done,
+            onChanged: (value) {
+              draftColor = value;
+              if (error != null) setState(() => error = null);
+            },
+            onFieldSubmitted: (_) {
+              final parsed = _colorFromHex(draftColor);
+              if (parsed == null) {
+                setState(() => error = 'Format attendu : #RRGGBB');
+                return;
+              }
+              Navigator.pop(context, parsed);
+            },
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () {
+                final parsed = _colorFromHex(draftColor);
+                if (parsed == null) {
+                  setState(() => error = 'Format attendu : #RRGGBB');
+                  return;
+                }
+                Navigator.pop(context, parsed);
+              },
+              child: const Text('Valider'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (value != null) await controller.setPrimaryColor(value);
+  }
+
+  Future<void> _editAssociationName(BuildContext context) async {
+    var draftName = controller.associationName;
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nom de l’association'),
+        content: TextFormField(
+          initialValue: draftName,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Nom affiché'),
+          textInputAction: TextInputAction.done,
+          onChanged: (value) => draftName = value,
+          onFieldSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, draftName),
+              child: const Text('Valider')),
+        ],
+      ),
+    );
+    if (value != null) {
+      await Future<void>.delayed(kThemeAnimationDuration);
+      if (!context.mounted) return;
+      await controller.setAssociationName(value);
+    }
+  }
+
+  Future<void> _pickAppIcon(BuildContext context) async {
+    final result = await FilePicker.pickFiles(type: FileType.image);
+    final selectedPath = result?.files.single.path;
+    if (selectedPath == null || selectedPath.trim().isEmpty) return;
+    try {
+      final supportDirectory = await getApplicationSupportDirectory();
+      final iconDirectory =
+          Directory(path.join(supportDirectory.path, 'Tilly', 'branding'));
+      await iconDirectory.create(recursive: true);
+      final extension = path.extension(selectedPath).toLowerCase();
+      final target = path.join(iconDirectory.path,
+          'app-icon${extension.isEmpty ? '.png' : extension}');
+      await File(selectedPath).copy(target);
+      await controller.setAppIconPath(target);
+    } catch (error) {
+      if (context.mounted) snack(context, 'Image impossible à enregistrer');
+    }
+  }
+
+  Widget _buildUpdateSection() {
+    return ConfigActionZone(
+      borderColor: updateResult?.requiresUpdate == true
+          ? AppColors.warn
+          : AppColors.accent2,
+      title: _updateStatusTitle(),
+      description: _updateStatusDescription(),
+      action: Wrap(
+        spacing: 8,
+        children: [
+          if (updateResult?.update != null)
+            FilledButton.tonalIcon(
+              onPressed: () => onOpenUpdate(updateResult!.update!),
+              icon: const Icon(Icons.download),
+              label: Text(
+                Platform.isAndroid ? 'Télécharger APK' : 'Télécharger',
+              ),
+            ),
+          OutlinedButton.icon(
+            onPressed: checkingUpdate ? null : onCheckUpdate,
+            icon: checkingUpdate
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            label: const Text('Vérifier'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildFirebaseSections(BuildContext context) {
+    final configured = controller.firebaseSettings.isConfigured;
+    final connected = controller.firebaseAvailable;
+    return [
+      const SectionTitle('Firebase'),
+      ConfigActionZone(
+        borderColor: connected
+            ? AppColors.accent
+            : configured
+                ? AppColors.accent2
+                : AppColors.warn,
+        title: connected
+            ? 'Synchronisation active'
+            : FirebaseBootstrap.initialized
+                ? 'Connexion du compte requise'
+                : configured
+                    ? 'Configuration à corriger'
+                    : 'Synchronisation désactivée',
+        description: connected
+            ? '${controller.firebaseUserLabel} · Projet ${controller.firebaseSettings.projectId}${controller.lastSyncedAt == null ? '' : ' · ${dateLabel(controller.lastSyncedAt!)} ${timeLabel(controller.lastSyncedAt!)}'}'
+            : FirebaseBootstrap.initialized
+                ? 'Le projet ${controller.firebaseSettings.projectId} est prêt. Connecte le compte utilisateur pour terminer.'
+                : configured
+                    ? (FirebaseBootstrap.error ??
+                        'La configuration Firebase doit être corrigée.')
+                    : 'Colle la configuration du projet puis connecte le compte utilisateur dans un seul parcours.',
+        action: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (!connected)
+              FilledButton.icon(
+                onPressed: controller.syncing
+                    ? null
+                    : () => showFirebaseSetupDialog(context, controller,
+                        editProject: !FirebaseBootstrap.initialized),
+                icon: const Icon(Icons.cloud_done),
+                label: Text(FirebaseBootstrap.initialized
+                    ? 'Se connecter'
+                    : 'Activer Firebase'),
+              ),
+            if (!connected)
+              OutlinedButton.icon(
+                onPressed: () => showFirebaseHelpDialog(context),
+                icon: const Icon(Icons.help_outline),
+                label: const Text('À quoi ça sert ?'),
+              ),
+            if (connected)
               FilledButton.tonalIcon(
-                onPressed: controller.firebaseAvailable && !controller.syncing
-                    ? () => _syncFirebase(context)
-                    : null,
+                onPressed:
+                    controller.syncing ? null : () => _syncFirebase(context),
                 icon: controller.syncing
                     ? const SizedBox.square(
                         dimension: 18,
@@ -190,166 +586,197 @@ class ConfigPage extends StatelessWidget {
                     : const Icon(Icons.sync),
                 label: const Text('Synchroniser'),
               ),
-              if (FirebaseBootstrap.initialized &&
-                  FirebaseAuth.instance.currentUser == null)
-                const Chip(
-                  avatar: Icon(Icons.login, size: 16),
-                  label: Text('Connexion ci-dessous'),
-                  visualDensity: VisualDensity.compact,
-                ),
-              if (FirebaseBootstrap.initialized &&
-                  FirebaseAuth.instance.currentUser != null)
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    await controller.disconnectFirebase();
-                    if (context.mounted) snack(context, 'Firebase déconnecté');
-                  },
-                  icon: const Icon(Icons.logout),
-                  label: const Text('Déconnexion'),
-                ),
-            ],
-          ),
-        ),
-        if (FirebaseBootstrap.initialized &&
-            FirebaseAuth.instance.currentUser == null) ...[
-          const SizedBox(height: 8),
-          FirebaseLoginPanel(controller: controller),
-        ],
-        const SectionTitle('HelloAsso'),
-        ConfigActionZone(
-          borderColor: controller.helloAssoSettings.isConfigured
-              ? AppColors.accent
-              : AppColors.warn,
-          title: controller.helloAssoSettings.isConfigured
-              ? 'Connexion configurée'
-              : 'Connexion non configurée',
-          description: controller.helloAssoSettings.isConfigured
-              ? '${controller.helloAssoSettings.organizationSlug} · ${controller.helloAssoSettings.environment == 'sandbox' ? 'Sandbox' : 'Production'}'
-              : 'Renseigne les clés API pour importer les évènements et les joueurs inscrits.',
-          action: Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () =>
-                    showHelloAssoSettingsDialog(context, controller),
+            if (configured)
+              IconButton.outlined(
+                tooltip: 'Changer de projet Firebase',
+                onPressed: controller.syncing
+                    ? null
+                    : () => showFirebaseSetupDialog(context, controller,
+                        editProject: true),
                 icon: const Icon(Icons.settings),
-                label: const Text('Configurer'),
               ),
-              FilledButton.tonalIcon(
-                onPressed: controller.helloAssoSettings.isConfigured
-                    ? () async {
-                        try {
-                          await controller.testHelloAssoConnection();
-                          if (context.mounted) {
-                            snack(context, 'Connexion HelloAsso OK');
-                          }
-                        } catch (error) {
-                          if (context.mounted) {
-                            snack(context,
-                                'Connexion HelloAsso impossible : $error');
-                          }
+            if (connected)
+              IconButton.outlined(
+                tooltip: 'Déconnecter le compte',
+                onPressed: () async {
+                  await controller.disconnectFirebase();
+                  if (context.mounted) snack(context, 'Firebase déconnecté');
+                },
+                icon: const Icon(Icons.logout),
+              ),
+            if (configured)
+              IconButton.outlined(
+                tooltip: 'Supprimer la configuration Firebase',
+                onPressed: controller.syncing
+                    ? null
+                    : () async {
+                        if (!await confirm(context,
+                            'Supprimer la configuration Firebase de cet appareil ?')) {
+                          return;
                         }
-                      }
-                    : null,
-                icon: const Icon(Icons.cloud_sync),
-                label: const Text('Tester'),
+                        await controller.resetFirebaseSettings();
+                        if (context.mounted) {
+                          snack(context, 'Configuration Firebase supprimée');
+                        }
+                      },
+                icon: const Icon(Icons.delete_outline),
               ),
-            ],
-          ),
+          ],
         ),
-        const SectionTitle('Sauvegarde & restauration'),
-        ConfigActionZone(
-          borderColor: AppColors.accent2,
-          title: 'Exporter mes données',
-          description:
-              'Enregistre un JSON complet dans Downloads avec toutes les sessions, joueurs, ventes, articles et fonds de caisse.',
-          action: FilledButton.tonalIcon(
-            onPressed: () => copyBackup(context, controller),
-            icon: const Icon(Icons.download),
-            label: const Text('Exporter'),
+      ),
+    ];
+  }
+
+  Widget _buildHelloAssoSection(BuildContext context) {
+    return ConfigActionZone(
+      borderColor: controller.helloAssoSettings.isConfigured
+          ? AppColors.accent
+          : AppColors.warn,
+      title: controller.helloAssoSettings.isConfigured
+          ? 'Connexion configurée'
+          : 'Connexion non configurée',
+      description: controller.helloAssoSettings.isConfigured
+          ? '${controller.helloAssoSettings.organizationSlug} · ${controller.helloAssoSettings.environment == 'sandbox' ? 'Sandbox' : 'Production'}'
+          : 'Renseigne les clés API pour importer les évènements et les joueurs inscrits.',
+      action: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          OutlinedButton.icon(
+            onPressed: () => showHelloAssoSettingsDialog(context, controller),
+            icon: const Icon(Icons.settings),
+            label: const Text('Configurer'),
           ),
-        ),
-        const SizedBox(height: 8),
-        ConfigActionZone(
-          borderColor: AppColors.accent2,
-          title: 'Restaurer depuis un fichier',
-          description:
-              'Importe un JSON valide, apres creation automatique d une copie locale de securite.',
-          action: OutlinedButton.icon(
-            onPressed: () => importBackupFromFile(context, controller),
-            icon: const Icon(Icons.upload_file),
-            label: const Text('Restaurer'),
+          if (!controller.helloAssoSettings.isConfigured)
+            OutlinedButton.icon(
+              onPressed: () => showHelloAssoHelpDialog(context,
+                  mealsEnabled: controller.mealsEnabled),
+              icon: const Icon(Icons.help_outline),
+              label: const Text('À quoi ça sert ?'),
+            ),
+          FilledButton.tonalIcon(
+            onPressed: controller.helloAssoSettings.isConfigured
+                ? () async {
+                    try {
+                      await controller.testHelloAssoConnection();
+                      if (context.mounted) {
+                        snack(context, 'Connexion HelloAsso OK');
+                      }
+                    } catch (error) {
+                      if (context.mounted) {
+                        snack(
+                            context, 'Connexion HelloAsso impossible : $error');
+                      }
+                    }
+                  }
+                : null,
+            icon: const Icon(Icons.cloud_sync),
+            label: const Text('Tester'),
           ),
-        ),
-        const SectionTitle('Remise à zéro'),
-        ConfigActionZone(
-          borderColor: AppColors.danger,
-          title: 'Reset ventes',
-          description:
-              'Efface les ventes. Joueurs, articles et stock actuel sont conservés.',
-          action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () async {
-              if (await confirm(context, 'Effacer toutes les ventes ?')) {
-                await controller.resetSales();
-              }
-            },
-            child: const Text('Reset ventes'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        ConfigActionZone(
-          borderColor: AppColors.danger,
-          title: 'Reset complet',
-          description:
-              'Efface ventes et joueurs. Les articles restent configurés.',
-          action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () async {
-              if (await confirm(context, 'Effacer ventes et joueurs ?')) {
-                await controller.resetAll();
-              }
-            },
-            child: const Text('Reset complet'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        ConfigActionZone(
-          borderColor: AppColors.danger,
-          title: 'Supprimer session courante',
-          description:
-              'Efface la partie active avec ses ventes, joueurs présents et comptages. La session la plus récente restante devient active.',
-          action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () async {
-              final name =
-                  controller.activeSession?.name ?? 'la session courante';
-              if (await confirm(context,
-                  'Supprimer "$name" ? Cette action est définitive.')) {
-                await controller.deleteCurrentSession();
-                if (context.mounted) snack(context, 'Session supprimée');
-              }
-            },
-            child: const Text('Supprimer session'),
-          ),
-        ),
-        const SizedBox(height: 8),
-        ConfigActionZone(
-          borderColor: AppColors.danger,
-          title: 'Reset stock',
-          description: 'Remet tous les stocks à zéro.',
-          action: FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            onPressed: () async {
-              if (await confirm(context, 'Remettre tous les stocks à zéro ?')) {
-                await controller.resetStock();
-              }
-            },
-            child: const Text('Reset stock'),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
+  }
+
+  Widget _buildExportSection(BuildContext context) {
+    return ConfigActionZone(
+      borderColor: AppColors.accent2,
+      title: 'Exporter mes données',
+      description:
+          'Enregistre un JSON complet dans Downloads avec toutes les sessions, joueurs, ventes, articles et fonds de caisse.',
+      action: FilledButton.tonalIcon(
+        onPressed: () => copyBackup(context, controller),
+        icon: const Icon(Icons.download),
+        label: const Text('Exporter'),
+      ),
+    );
+  }
+
+  Widget _buildRestoreSection(BuildContext context) {
+    return ConfigActionZone(
+      borderColor: AppColors.accent2,
+      title: 'Restaurer depuis un fichier',
+      description:
+          'Importe un JSON valide, apres creation automatique d une copie locale de securite.',
+      action: OutlinedButton.icon(
+        onPressed: () => importBackupFromFile(context, controller),
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Restaurer'),
+      ),
+    );
+  }
+
+  List<Widget> _buildResetSections(BuildContext context) {
+    return [
+      const SectionTitle('Remise à zéro'),
+      ConfigActionZone(
+        borderColor: AppColors.danger,
+        title: 'Reset ventes',
+        description:
+            'Efface les ventes. Joueurs, articles et stock actuel sont conservés.',
+        action: FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () async {
+            if (await confirm(context, 'Effacer toutes les ventes ?')) {
+              await controller.resetSales();
+            }
+          },
+          child: const Text('Reset ventes'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ConfigActionZone(
+        borderColor: AppColors.danger,
+        title: 'Reset complet',
+        description:
+            'Efface sessions, joueurs, ventes, repas, articles, stocks et comptages. Les catégories par défaut restent disponibles.',
+        action: FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () async {
+            if (await confirm(context,
+                'Tout effacer et repartir sur une caisse vide ? Cette action est définitive.')) {
+              await controller.resetAll();
+            }
+          },
+          child: const Text('Reset complet'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ConfigActionZone(
+        borderColor: AppColors.danger,
+        title: 'Supprimer session courante',
+        description:
+            'Efface la partie active avec ses ventes, joueurs présents et comptages. La session la plus récente restante devient active.',
+        action: FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () async {
+            final name =
+                controller.activeSession?.name ?? 'la session courante';
+            if (await confirm(
+                context, 'Supprimer "$name" ? Cette action est définitive.')) {
+              await controller.deleteCurrentSession();
+              if (context.mounted) snack(context, 'Session supprimée');
+            }
+          },
+          child: const Text('Supprimer session'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      ConfigActionZone(
+        borderColor: AppColors.danger,
+        title: 'Reset stock',
+        description: 'Remet tous les stocks à zéro.',
+        action: FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () async {
+            if (await confirm(context, 'Remettre tous les stocks à zéro ?')) {
+              await controller.resetStock();
+            }
+          },
+          child: const Text('Reset stock'),
+        ),
+      ),
+    ];
   }
 
   String _updateStatusTitle() {
@@ -399,123 +826,156 @@ class ConfigPage extends StatelessWidget {
   }
 }
 
-class FirebaseLoginPanel extends StatefulWidget {
-  const FirebaseLoginPanel({required this.controller, super.key});
+class _ConfigTabBody extends StatelessWidget {
+  const _ConfigTabBody({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      children: children,
+    );
+  }
+}
+
+class _ConfigTabLabel extends StatelessWidget {
+  const _ConfigTabLabel({required this.icon, required this.title});
+
+  final IconData icon;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 8),
+        Text(title),
+      ],
+    );
+  }
+}
+
+class _AppIconPreview extends StatelessWidget {
+  const _AppIconPreview({required this.controller});
 
   final AppController controller;
 
   @override
-  State<FirebaseLoginPanel> createState() => _FirebaseLoginPanelState();
+  Widget build(BuildContext context) {
+    final iconPath = controller.appIconPath;
+    final hasIcon = iconPath.isNotEmpty && File(iconPath).existsSync();
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: hasIcon
+          ? Image.file(
+              File(iconPath),
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) =>
+                  Icon(Icons.bolt, color: context.primaryAccent, size: 34),
+            )
+          : Icon(Icons.bolt, color: context.primaryAccent, size: 34),
+    );
+  }
 }
 
-class _FirebaseLoginPanelState extends State<FirebaseLoginPanel> {
-  final emailController = TextEditingController();
-  final passwordController = TextEditingController();
-  bool loading = false;
-  bool obscurePassword = true;
-  String? error;
+class _MainTabSwitch extends StatelessWidget {
+  const _MainTabSwitch({
+    required this.controller,
+    required this.id,
+    required this.icon,
+    required this.title,
+    this.disabled = false,
+  });
 
-  @override
-  void dispose() {
-    emailController.dispose();
-    passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _signIn() async {
-    if (loading) return;
-    setState(() {
-      loading = true;
-      error = null;
-    });
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text,
-      );
-      final result = await widget.controller.connectFirebaseUser();
-      if (mounted) snack(context, result.message);
-    } on FirebaseAuthException catch (exception) {
-      if (mounted) setState(() => error = exception.message ?? exception.code);
-    } catch (exception) {
-      if (mounted) setState(() => error = '$exception');
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
+  final AppController controller;
+  final String id;
+  final IconData icon;
+  final String title;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
-    return TacticalCard(
-      borderColor: error == null ? AppColors.border : AppColors.danger,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 720;
-          final emailField = TextField(
-            controller: emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            decoration: const InputDecoration(
-                labelText: 'Email Firebase', prefixIcon: Icon(Icons.mail)),
-          );
-          final passwordField = TextField(
-            controller: passwordController,
-            obscureText: obscurePassword,
-            onSubmitted: (_) => _signIn(),
-            decoration: InputDecoration(
-              labelText: 'Mot de passe',
-              prefixIcon: const Icon(Icons.lock),
-              suffixIcon: IconButton(
-                tooltip: obscurePassword ? 'Afficher' : 'Masquer',
-                onPressed: () =>
-                    setState(() => obscurePassword = !obscurePassword),
-                icon: Icon(
-                    obscurePassword ? Icons.visibility : Icons.visibility_off),
-              ),
+    return SwitchListTile(
+      secondary: Icon(icon),
+      title: Text(title),
+      subtitle: disabled ? const Text('Module désactivé') : null,
+      value: !disabled && controller.isMainTabVisible(id),
+      onChanged:
+          disabled ? null : (value) => controller.setMainTabVisible(id, value),
+    );
+  }
+}
+
+const _themeColorPresets = <Color>[
+  AppColors.accent,
+  AppColors.accent2,
+  Color(0xFFFFD33D),
+  Color(0xFFFF6B35),
+  Color(0xFFE83F6F),
+  Color(0xFF9B5DE5),
+  Color(0xFF00F5D4),
+  Color(0xFF4CAF50),
+];
+
+class _ThemeColorSwatch extends StatelessWidget {
+  const _ThemeColorSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final checkColor =
+        color.computeLuminance() > 0.45 ? Colors.black : Colors.white;
+    return Tooltip(
+      message: _hexColor(color),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? AppColors.text : AppColors.border,
+              width: selected ? 3 : 1,
             ),
-          );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (wide)
-                Row(
-                  children: [
-                    Expanded(child: emailField),
-                    const SizedBox(width: 8),
-                    Expanded(child: passwordField),
-                  ],
-                )
-              else ...[
-                emailField,
-                const SizedBox(height: 8),
-                passwordField,
-              ],
-              if (error != null) ...[
-                const SizedBox(height: 8),
-                Text(error!,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.danger)),
-              ],
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: loading ? null : _signIn,
-                  icon: loading
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.login),
-                  label: const Text('Connecter'),
-                ),
-              ),
-            ],
-          );
-        },
+          ),
+          child:
+              selected ? Icon(Icons.check, color: checkColor, size: 22) : null,
+        ),
       ),
     );
   }
+}
+
+Color? _colorFromHex(String value) {
+  final parsed = _parseColorValue(value);
+  if (parsed == null) return null;
+  return Color(parsed);
+}
+
+String _hexColor(Color color) {
+  final value = color.toARGB32() & 0xFFFFFF;
+  return '#${value.toRadixString(16).padLeft(6, '0').toUpperCase()}';
 }
 
 class HistoryPage extends StatelessWidget {
@@ -552,8 +1012,9 @@ class HistoryPage extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: TacticalCard(
-              borderColor:
-                  session.id == activeId ? AppColors.accent : AppColors.border,
+              borderColor: session.id == activeId
+                  ? context.primaryAccent
+                  : AppColors.border,
               child: Builder(
                 builder: (context) {
                   final sessionSales = controller.salesForSession(session.id);
@@ -567,7 +1028,7 @@ class HistoryPage extends StatelessWidget {
                           ? Icons.radio_button_checked
                           : Icons.history,
                       color: session.id == activeId
-                          ? AppColors.accent
+                          ? context.primaryAccent
                           : AppColors.muted,
                     ),
                     title: Row(
@@ -649,8 +1110,8 @@ class HistoryPage extends StatelessWidget {
                             subtitle: Text(
                                 '${sale.playerName} · ${timeLabel(sale.createdAt)} · ${sale.payment}${sale.donation > 0 ? ' · don ${money(sale.donation)}' : ''}'),
                             trailing: Text(money(sale.total),
-                                style: const TextStyle(
-                                    color: AppColors.accent,
+                                style: TextStyle(
+                                    color: context.primaryAccent,
                                     fontWeight: FontWeight.w900)),
                           ),
                     ],

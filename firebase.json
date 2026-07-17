@@ -1,1 +1,1 @@
-{"firestore":{"rules":"firestore.rules"},"flutter":{"platforms":{"android":{"default":{"projectId":"frag-addict-caisse","appId":"1:418329101136:android:ccdeb4fbb93707bfb36255","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"frag-addict-caisse","configurations":{"android":"1:418329101136:android:ccdeb4fbb93707bfb36255","windows":"1:418329101136:web:98a7ded562a392fab36255"}}}}}}
+{"firestore":{"rules":"firestore.rules"}}

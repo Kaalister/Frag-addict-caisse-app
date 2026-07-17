@@ -1,5 +1,5 @@
-name: frags_addicts_caisse
-description: Application Flutter de caisse tactique pour les parties airsoft Frags Addicts.
+name: tilly
+description: Application Flutter de caisse tactique pour les parties airsoft Tilly.
 publish_to: "none"
 version: 1.0.0+1
 
@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   cloud_firestore: ^6.3.0
+  file_picker: ^11.0.2
   firebase_auth: ^6.4.0
   firebase_core: ^4.7.0
   flutter:

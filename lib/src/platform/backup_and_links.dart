@@ -6,7 +6,7 @@ Future<void> copyBackup(BuildContext context, AppController controller) async {
     final content = const JsonEncoder.withIndent('  ').convert(payload);
     final timestamp =
         DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
-    final fileName = 'frags-addicts-export-$timestamp.json';
+    final fileName = 'tilly-export-$timestamp.json';
     final savedFile = await _saveJsonBackupFile(fileName, content);
     final name = savedFile['name'] ?? fileName;
     if (context.mounted) {
@@ -27,11 +27,10 @@ Future<Map<String, String>> saveRecoveryBackup(
   final content = const JsonEncoder.withIndent('  ').convert(payload);
   final timestamp =
       DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
-  return _saveJsonBackupFile(
-      'frags-addicts-avant-$operation-$timestamp.json', content);
+  return _saveJsonBackupFile('tilly-avant-$operation-$timestamp.json', content);
 }
 
-const _fileImportChannel = MethodChannel('frags_addicts/file_import');
+const _fileImportChannel = MethodChannel('tilly/file_import');
 
 Future<Map<String, String>> _saveJsonBackupFile(
     String fileName, String content) async {
@@ -56,7 +55,7 @@ String _safeJsonFileName(String name) {
       .trim()
       .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
       .replaceAll(RegExp(r'^[-._]+|[-._]+$'), '');
-  final safe = baseName.isEmpty ? 'frags-addicts-export.json' : baseName;
+  final safe = baseName.isEmpty ? 'tilly-export.json' : baseName;
   return safe.toLowerCase().endsWith('.json') ? safe : '$safe.json';
 }
 
@@ -142,7 +141,7 @@ Future<Map<String, String>?> _pickJsonBackupFileWindows() async {
 Add-Type -AssemblyName System.Windows.Forms
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Choisir une sauvegarde Frags Addicts'
+$dialog.Title = 'Choisir une sauvegarde Tilly'
 $dialog.Filter = 'Sauvegardes JSON (*.json)|*.json|Tous les fichiers (*.*)|*.*'
 $dialog.Multiselect = $false
 if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {

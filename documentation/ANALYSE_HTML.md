@@ -28,7 +28,7 @@
 
 ## Identité visuelle définie
 
-Nom : **Frags Addicts Tactical POS**
+Nom : **Tilly**
 
 Positionnement : caisse mobile/tablette pour événement airsoft, lisible en extérieur, rapide à manipuler, pensée pour éviter les erreurs de stock et de paiement.
 

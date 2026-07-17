@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -16,8 +17,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart' as sqflite_ffi;
-
-import 'firebase_options.dart';
 
 part 'src/app/app.dart';
 part 'src/controllers/app_controller.dart';
@@ -43,10 +42,24 @@ part 'src/ui/root_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await _lockPhoneToPortrait();
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqflite_ffi.sqfliteFfiInit();
     databaseFactory = sqflite_ffi.databaseFactoryFfi;
   }
-  await FirebaseBootstrap.initialize();
-  runApp(const CaisseAirsoftApp());
+  final firebaseSettings = await SecureSettingsService().loadFirebaseSettings();
+  await FirebaseBootstrap.initialize(firebaseSettings);
+  runApp(const TillyApp());
+}
+
+Future<void> _lockPhoneToPortrait() async {
+  if (!Platform.isAndroid) return;
+
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  final shortestSide = view.physicalSize.shortestSide / view.devicePixelRatio;
+  if (shortestSide < 600) {
+    await SystemChrome.setPreferredOrientations(
+      const [DeviceOrientation.portraitUp],
+    );
+  }
 }

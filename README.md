@@ -1,6 +1,6 @@
-# Frags Addicts Caisse
+# Tilly
 
-Application de caisse Flutter pour les journees airsoft de Frags Addicts. Elle
+Application de caisse Flutter pour les journees airsoft de Tilly. Elle
 permet de gerer une partie depuis un telephone Android ou un poste Windows :
 inscriptions, ventes, stock, paiements, controle de la caisse et rapports de
 fin de journee.
@@ -37,6 +37,23 @@ Les artefacts distribues sont prevus pour :
 - Android : fichier APK installable directement.
 - Windows x64 : installateur `.exe` ou archive portable `.zip`.
 
+Pour les tags publies avec ce workflow, les liens publics directs vers la
+derniere release sont :
+
+- Android APK :
+  [Tilly-Android-latest.apk](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/Tilly-Android-latest.apk)
+- Windows installateur :
+  [TillySetup-latest.exe](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/TillySetup-latest.exe)
+- Windows portable :
+  [Tilly-Windows-latest.zip](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/Tilly-Windows-latest.zip)
+
+Ces liens pointent vers les assets de GitHub Release et sont telechargeables
+sans compte GitHub lorsque le depot est public. Ne pas partager les liens
+`actions/runs/.../artifacts/...` de GitHub Actions : ils peuvent demander une
+connexion GitHub. Si la derniere release est anterieure a cette configuration,
+utiliser les fichiers versionnes depuis la page
+[Releases GitHub](https://github.com/Kaalister/Tilly-caisse-app/releases/latest).
+
 L'interface est responsive : navigation basse et ecran vertical sur mobile,
 navigation laterale et panneaux multiples sur tablette ou ecran large.
 
@@ -45,12 +62,12 @@ navigation laterale et panneaux multiples sur tablette ou ecran large.
 ### Android
 
 1. Telecharger le dernier fichier
-   `FragsAddictsCaisse-Android-<version>.apk` depuis la page
-   [Releases GitHub](https://github.com/Kaalister/Frag-addict-caisse-app/releases/latest).
+   `Tilly-Android-<version>.apk` depuis la page
+   [Releases GitHub](https://github.com/Kaalister/Tilly-caisse-app/releases/latest).
 2. Ouvrir le fichier APK sur le telephone.
 3. Autoriser l'installation d'applications provenant de cette source si
    Android le demande, puis installer l'application.
-4. Lancer **Caisse Airsoft**.
+4. Lancer **Tilly**.
 
 Les donnees sont stockees localement sur le telephone. Pour changer d'appareil,
 utiliser **Config > Exporter** puis **Restaurer**, ou configurer Firebase.
@@ -61,7 +78,7 @@ Une mise a jour doit remplacer l'installation existante, sans la
 desinstaller et sans effacer ses donnees :
 
 - Android : ouvrir le nouvel APK et choisir l'installation/mise a jour de
-  l'application deja presente. L'identifiant `com.fragsaddicts.caisse` et la
+  l'application deja presente. L'identifiant `com.tilly.caisse` et la
   signature de publication doivent rester identiques.
 - Windows : executer le nouvel installateur dans le meme emplacement. Il
   remplace les fichiers du programme sans supprimer les donnees utilisateur
@@ -78,15 +95,15 @@ une mise a jour et ne permet pas cette conservation.
 
 ### Windows
 
-1. Telecharger `FragsAddictsCaisseSetup-<version>.exe` depuis la page
-   [Releases GitHub](https://github.com/Kaalister/Frag-addict-caisse-app/releases/latest).
+1. Telecharger `TillySetup-<version>.exe` depuis la page
+   [Releases GitHub](https://github.com/Kaalister/Tilly-caisse-app/releases/latest).
 2. Executer l'installateur et suivre l'assistant.
-3. Lancer **Frags Addicts Caisse** depuis le menu Demarrer ou le raccourci
+3. Lancer **Tilly** depuis le menu Demarrer ou le raccourci
    cree pendant l'installation.
 
-L'archive `FragsAddictsCaisse-Windows-<version>.zip` est disponible pour un
+L'archive `Tilly-Windows-<version>.zip` est disponible pour un
 usage portable : extraire tout le dossier puis executer
-`frags_addicts_caisse.exe`.
+`tilly.exe`.
 
 ## Utilisation
 
@@ -173,8 +190,8 @@ Les versions exactes se trouvent dans [`pubspec.yaml`](pubspec.yaml).
 ### Recuperer et lancer le projet
 
 ```bash
-git clone https://github.com/Kaalister/Frag-addict-caisse-app.git
-cd Frag-addict-caisse-app
+git clone https://github.com/Kaalister/Tilly-caisse-app.git
+cd Tilly-caisse-app
 flutter doctor
 flutter pub get
 ```
@@ -194,16 +211,11 @@ flutter config --enable-windows-desktop
 flutter run -d windows
 ```
 
-Firebase n'est pas requis pour lancer l'application. Pour brancher un projet
-Firebase propre a un environnement :
-
-```bash
-dart pub global activate flutterfire_cli
-flutterfire configure --platforms=android,windows
-```
-
-Activer ensuite Firebase Authentication par email/mot de passe et Cloud
-Firestore comme explique dans
+Firebase n'est pas requis pour lancer l'application. Dans **Config > Firebase**,
+le bouton **Activer Firebase** permet de coller la configuration du projet et
+de connecter le compte utilisateur dans un seul parcours. Les paramètres sont
+conservés dans le stockage sécurisé de l'appareil. Activer Firebase
+Authentication par email/mot de passe et Cloud Firestore comme expliqué dans
 [`documentation/FIREBASE_SETUP.md`](documentation/FIREBASE_SETUP.md).
 
 ### Verification
@@ -246,14 +258,14 @@ configures :
 Le keystore et son alias constituent l'identite de l'application installee.
 Ils doivent etre archives et reutilises pour toutes les releases Android :
 Android refuse une mise a jour signee avec une autre cle. Ne jamais changer
-non plus `applicationId = "com.fragsaddicts.caisse"` pour une release de mise
+non plus `applicationId = "com.tilly.caisse"` pour une release de mise
 a jour, sous peine d'installer une deuxieme application sans acces aux donnees
 locales de la precedente.
 
 Sur macOS, le keystore peut etre encode avant ajout dans GitHub avec :
 
 ```bash
-base64 -i android/app/frags-addicts-release.jks | pbcopy
+base64 -i android/app/tilly-release.jks | pbcopy
 ```
 
 ## Structure Du Depot
@@ -264,7 +276,6 @@ base64 -i android/app/frags-addicts-release.jks | pbcopy
 | `lib/src/controllers/` | Orchestration de la caisse et regles metier |
 | `lib/src/data/`, `lib/src/services/` | SQLite, Firebase, HelloAsso et secrets |
 | `lib/src/ui/`, `lib/src/exports/` | Ecrans, dialogues et exports PDF |
-| `lib/firebase_options.dart` | Options Firebase generees par FlutterFire |
 | `android/` | Projet Android |
 | `windows/` | Projet Windows |
 | `installer/` | Script Inno Setup pour l'installateur Windows |
