@@ -1,5 +1,8 @@
 part of '../../main.dart';
 
+const helloAssoConnectionFailedMessage =
+    'Connexion HelloAsso impossible. Vérifie la configuration et réessaie.';
+
 Future<void> showPlayerDialog(BuildContext context, AppController controller,
     {Player? player}) async {
   final splitName = player == null
@@ -28,7 +31,8 @@ Future<void> showPlayerDialog(BuildContext context, AppController controller,
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        title: Text(player == null ? 'Nouveau joueur' : 'Modifier joueur'),
+        title: Text(
+            player == null ? 'Nouveau participant' : 'Modifier participant'),
         content: SizedBox(
           width: min(MediaQuery.sizeOf(context).width - 48, 560),
           child: SingleChildScrollView(
@@ -38,9 +42,9 @@ Future<void> showPlayerDialog(BuildContext context, AppController controller,
                 if (existingPlayers.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     initialValue: selectedExistingId,
-                    decoration:
-                        const InputDecoration(labelText: 'Joueur existant'),
-                    hint: const Text('Sélectionner un ancien joueur'),
+                    decoration: const InputDecoration(
+                        labelText: 'Participant existant'),
+                    hint: const Text('Sélectionner un ancien participant'),
                     items: [
                       for (final existing in existingPlayers)
                         DropdownMenuItem(
@@ -183,7 +187,8 @@ Future<void> showCreateSessionDialog(
           }).catchError((error) {
             if (!context.mounted) return;
             setState(() {
-              helloAssoError = '$error';
+              helloAssoError =
+                  'Connexion impossible. Tu peux continuer sans liaison.';
               loadingEvents = false;
             });
           });
@@ -258,10 +263,16 @@ Future<void> showCreateSessionDialog(
             context,
             selectedEvent == null
                 ? 'Nouvelle session active'
-                : 'Session créée avec joueurs HelloAsso');
+                : 'Session créée avec participants HelloAsso');
       }
     } catch (error) {
-      if (context.mounted) snack(context, 'Création impossible : $error');
+      if (context.mounted) {
+        snack(
+            context,
+            selectedEventEnabled
+                ? helloAssoConnectionFailedMessage
+                : 'Création impossible : $error');
+      }
     }
   }
 }
@@ -373,8 +384,8 @@ Future<void> showHelloAssoHelpDialog(BuildContext context,
             children: [
               Text(
                 mealsEnabled
-                    ? 'HelloAsso est optionnel. Sans connexion, les joueurs et les repas peuvent toujours être saisis manuellement.'
-                    : 'HelloAsso est optionnel. Sans connexion, les joueurs peuvent toujours être saisis manuellement.',
+                    ? 'HelloAsso est optionnel. Sans connexion, les participants et les repas peuvent toujours être saisis manuellement.'
+                    : 'HelloAsso est optionnel. Sans connexion, les participants peuvent toujours être saisis manuellement.',
               ),
               const SizedBox(height: 14),
               _HelpDialogItem(

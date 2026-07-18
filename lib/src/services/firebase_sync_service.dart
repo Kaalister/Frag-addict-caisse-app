@@ -59,7 +59,7 @@ class FirebaseSyncService {
         final remoteUpdatedAt = _remoteUpdatedAt(data);
         final remotePayload =
             Map<String, dynamic>.from(data['payload'] as Map? ?? const {});
-        final payload = _withoutHelloAssoSecret(remotePayload);
+        final payload = sanitizePayloadForSync(remotePayload);
         if (jsonEncode(payload) != jsonEncode(remotePayload)) {
           await snapshotRef.update({'payload': _jsonSafe(payload)});
         }
@@ -126,26 +126,9 @@ class FirebaseSyncService {
     return jsonDecode(jsonEncode(value)) as Object;
   }
 
-  Map<String, dynamic> _withoutHelloAssoSecret(
-      Map<String, dynamic> sourcePayload) {
-    final payload =
-        Map<String, dynamic>.from(jsonDecode(jsonEncode(sourcePayload)) as Map);
-    final data = payload['data'];
-    if (data is! Map) return payload;
-    final rows = data['appSettings'];
-    if (rows is! List) return payload;
-    for (final row in rows.whereType<Map>()) {
-      if (row['key'] != 'helloasso_settings') continue;
-      try {
-        final settings = HelloAssoSettings.fromJson(
-            Map<String, dynamic>.from(jsonDecode('${row['value']}') as Map));
-        row['value'] = jsonEncode(settings.toJson(includeSecret: false));
-      } catch (_) {
-        row['value'] = '{}';
-      }
-    }
-    return payload;
-  }
+  static Map<String, dynamic> sanitizePayloadForSync(
+          Map<String, dynamic> sourcePayload) =>
+      sanitizePortableBackupPayload(sourcePayload);
 
   String _friendlySyncError(Object exception) {
     if (exception is FirebaseException &&

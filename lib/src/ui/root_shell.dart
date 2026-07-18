@@ -431,7 +431,7 @@ List<_ShellDestination> _visibleShellDestinations(
       id: AppTabIds.players,
       tabIndex: 2,
       icon: Icons.groups,
-      label: 'Joueurs',
+      label: 'Participants',
       page: PlayersPage(controller: controller),
     ),
     _ShellDestination(

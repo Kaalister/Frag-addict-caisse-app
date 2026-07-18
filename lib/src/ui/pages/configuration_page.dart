@@ -350,7 +350,7 @@ class _ConfigPageState extends State<ConfigPage>
               controller: controller,
               id: AppTabIds.players,
               icon: Icons.groups,
-              title: 'Joueurs',
+              title: 'Participants',
             ),
             _MainTabSwitch(
               controller: controller,
@@ -637,7 +637,7 @@ class _ConfigPageState extends State<ConfigPage>
           : 'Connexion non configurée',
       description: controller.helloAssoSettings.isConfigured
           ? '${controller.helloAssoSettings.organizationSlug} · ${controller.helloAssoSettings.environment == 'sandbox' ? 'Sandbox' : 'Production'}'
-          : 'Renseigne les clés API pour importer les évènements et les joueurs inscrits.',
+          : 'Renseigne les clés API pour importer les évènements et les participants inscrits.',
       action: Wrap(
         spacing: 8,
         runSpacing: 8,
@@ -664,8 +664,7 @@ class _ConfigPageState extends State<ConfigPage>
                       }
                     } catch (error) {
                       if (context.mounted) {
-                        snack(
-                            context, 'Connexion HelloAsso impossible : $error');
+                        snack(context, helloAssoConnectionFailedMessage);
                       }
                     }
                   }
@@ -683,7 +682,7 @@ class _ConfigPageState extends State<ConfigPage>
       borderColor: AppColors.accent2,
       title: 'Exporter mes données',
       description:
-          'Enregistre un JSON complet dans Downloads avec toutes les sessions, joueurs, ventes, articles et fonds de caisse.',
+          'Enregistre un JSON complet dans Downloads avec toutes les sessions, participants, ventes, articles et fonds de caisse.',
       action: FilledButton.tonalIcon(
         onPressed: () => copyBackup(context, controller),
         icon: const Icon(Icons.download),
@@ -713,7 +712,7 @@ class _ConfigPageState extends State<ConfigPage>
         borderColor: AppColors.danger,
         title: 'Reset ventes',
         description:
-            'Efface les ventes. Joueurs, articles et stock actuel sont conservés.',
+            'Efface les ventes. Participants, articles et stock actuel sont conservés.',
         action: FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
           onPressed: () async {
@@ -729,7 +728,7 @@ class _ConfigPageState extends State<ConfigPage>
         borderColor: AppColors.danger,
         title: 'Reset complet',
         description:
-            'Efface sessions, joueurs, ventes, repas, articles, stocks et comptages. Les catégories par défaut restent disponibles.',
+            'Efface sessions, participants, ventes, repas, articles, stocks et comptages. Les catégories par défaut restent disponibles.',
         action: FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
           onPressed: () async {
@@ -746,7 +745,7 @@ class _ConfigPageState extends State<ConfigPage>
         borderColor: AppColors.danger,
         title: 'Supprimer session courante',
         description:
-            'Efface la partie active avec ses ventes, joueurs présents et comptages. La session la plus récente restante devient active.',
+            'Efface la partie active avec ses ventes, participants présents et comptages. La session la plus récente restante devient active.',
         action: FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
           onPressed: () async {

@@ -66,7 +66,7 @@ void main() {
         MealOrder(
           id: 'meal-1',
           playerId: 'player-1',
-          playerName: 'Joueur',
+          playerName: 'Participant',
           playerType: 'public',
           source: 'helloasso',
           status: 'prepared',
@@ -105,7 +105,7 @@ void main() {
         MealOrder(
           id: 'meal-1',
           playerId: 'player-1',
-          playerName: 'Joueur',
+          playerName: 'Participant',
           playerType: 'public',
           source: 'onsite',
           status: 'served',
@@ -120,7 +120,7 @@ void main() {
         Sale(
           id: 'sale-1',
           playerId: 'player-1',
-          playerName: 'Joueur',
+          playerName: 'Participant',
           playerType: 'public',
           tariff: 'public',
           items: [
@@ -171,7 +171,7 @@ void main() {
         MealOrder(
           id: 'meal-1',
           playerId: 'player-1',
-          playerName: 'Joueur',
+          playerName: 'Participant',
           playerType: 'public',
           source: 'helloasso',
           status: 'planned',
@@ -189,7 +189,7 @@ void main() {
   });
 
   test('location checkout never consumes stock', () {
-    final player = Player(id: 'player-1', name: 'Joueur', type: 'public');
+    final player = Player(id: 'player-1', name: 'Participant', type: 'public');
     final controller = AppController()
       ..articles = [
         Article(
@@ -273,6 +273,29 @@ void main() {
 
     expect(exported.containsKey('clientSecret'), isFalse);
     expect(settings.withoutSecret().clientSecret, isEmpty);
+  });
+
+  test('JSON backup payload excludes the HelloAsso client secret', () {
+    final payload = _backupPayloadWithHelloAssoSecret('json-private-secret');
+
+    final sanitized = sanitizePortableBackupPayload(payload);
+    final exported = const JsonEncoder.withIndent('  ').convert(sanitized);
+
+    expect(exported, isNot(contains('json-private-secret')));
+    expect(_helloAssoSettingsFromPayload(sanitized).clientSecret, isEmpty);
+    expect(_helloAssoSettingsFromPayload(payload).clientSecret,
+        'json-private-secret');
+  });
+
+  test('Firebase sync payload excludes the HelloAsso client secret', () {
+    final payload =
+        _backupPayloadWithHelloAssoSecret('firebase-private-secret');
+
+    final sanitized = FirebaseSyncService.sanitizePayloadForSync(payload);
+    final encoded = jsonEncode(sanitized);
+
+    expect(encoded, isNot(contains('firebase-private-secret')));
+    expect(_helloAssoSettingsFromPayload(sanitized).clientSecret, isEmpty);
   });
 
   test('app settings persist the primary color', () {
@@ -408,4 +431,186 @@ void main() {
     expect(controller.associationName, 'Nouvelle asso');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('sales page mobile layout does not overflow', (tester) async {
+    final controller = _MemoryAppController()
+      ..players = [
+        Player(id: 'player-1', name: 'Alice Dupont', type: 'public'),
+        Player(id: 'player-2', name: 'Bob Martin', type: 'membre'),
+      ]
+      ..articles = [
+        Article(
+          id: 'drink-1',
+          category: 'BOISSONS',
+          type: 'standard',
+          icon: 'B',
+          name: 'Boisson',
+          price: 2,
+          memberPrice: 1.5,
+          stock: 20,
+          threshold: 5,
+        ),
+        Article(
+          id: 'goodie-1',
+          category: 'GOODIES',
+          type: 'standard',
+          icon: 'G',
+          name: 'Goodie',
+          price: 5,
+          memberPrice: 4,
+          stock: 10,
+          threshold: 3,
+        ),
+      ];
+    controller
+      ..selectPlayer(controller.players.first)
+      ..addToCart(controller.articles.first);
+
+    tester.view.physicalSize = const Size(393, 783);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: CaissePage(controller: controller)),
+      ),
+    );
+
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+    final sheet = tester.widget<DraggableScrollableSheet>(
+        find.byType(DraggableScrollableSheet));
+    expect(sheet.maxChildSize, 1);
+    expect(find.text('Alice Dupont'), findsOneWidget);
+    expect(find.text('Vider'), findsNothing);
+    expect(find.text('ESP'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.drag(find.text('PANIER (1)'), const Offset(0, -620));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Vider'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cart item list scrolls after seven lines', (tester) async {
+    final articles = List.generate(
+      8,
+      (index) => Article(
+        id: 'article-$index',
+        category: 'BOISSONS',
+        type: 'standard',
+        icon: 'A',
+        name: 'Article $index',
+        price: 1,
+        memberPrice: 1,
+        stock: 20,
+        threshold: 5,
+      ),
+    );
+    final controller = _MemoryAppController()
+      ..articles = articles
+      ..cart = [
+        for (final article in articles)
+          CartItem(articleId: article.id, quantity: 1, price: article.price),
+      ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            height: 760,
+            child: CartPanel(controller: controller),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('scrollable-cart-items')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile cart keeps checkout controls visible with many items',
+      (tester) async {
+    final articles = List.generate(
+      12,
+      (index) => Article(
+        id: 'mobile-article-$index',
+        category: 'BOISSONS',
+        type: 'standard',
+        icon: 'A',
+        name: 'Article mobile $index',
+        price: 1,
+        memberPrice: 1,
+        stock: 20,
+        threshold: 5,
+      ),
+    );
+    final controller = _MemoryAppController()
+      ..players = [Player(id: 'player-1', name: 'Alice Dupont', type: 'public')]
+      ..articles = articles
+      ..cart = [
+        for (final article in articles)
+          CartItem(articleId: article.id, quantity: 1, price: article.price),
+      ];
+    controller.selectPlayer(controller.players.first);
+
+    tester.view.physicalSize = const Size(393, 783);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: CaissePage(controller: controller)),
+      ),
+    );
+
+    await tester.drag(find.text('PANIER (12)'), const Offset(0, -620));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('scrollable-cart-items')), findsOneWidget);
+    final clearButtonBottom = tester.getRect(find.text('Vider')).bottom;
+    expect(clearButtonBottom, lessThanOrEqualTo(783));
+    expect(tester.takeException(), isNull);
+  });
+}
+
+Map<String, dynamic> _backupPayloadWithHelloAssoSecret(String secret) {
+  final settings = HelloAssoSettings(
+    organizationSlug: 'tilly',
+    clientId: 'client',
+    clientSecret: secret,
+    environment: 'sandbox',
+  );
+  return {
+    'version': 3,
+    'data': {
+      'sessions': [
+        {'id': 'session-test'}
+      ],
+      'articles': <Map<String, Object?>>[],
+      'appSettings': [
+        {
+          'key': 'helloasso_settings',
+          'value': jsonEncode(settings.toJson()),
+          'updated_at': '2026-07-18T00:00:00',
+        },
+      ],
+    },
+  };
+}
+
+HelloAssoSettings _helloAssoSettingsFromPayload(Map<String, dynamic> payload) {
+  final data = Map<String, dynamic>.from(payload['data'] as Map);
+  final rows = data['appSettings'] as List;
+  final row = rows.whereType<Map>().firstWhere(
+      (entry) => entry['key'] == 'helloasso_settings',
+      orElse: () => const {});
+  return HelloAssoSettings.fromJson(
+      Map<String, dynamic>.from(jsonDecode('${row['value'] ?? '{}'}') as Map));
 }

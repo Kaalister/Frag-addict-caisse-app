@@ -28,9 +28,17 @@ class BilanPage extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       children: [
         SectionTitle('Bilan de la journée',
-            trailing: IconButton.filledTonal(
-                onPressed: () => copyBackup(context, controller),
-                icon: const Icon(Icons.copy_all))),
+            trailing: FilledButton.tonalIcon(
+                onPressed: () {
+                  final session = controller.activeSession;
+                  if (session == null) {
+                    snack(context, 'Aucune session active à exporter');
+                    return;
+                  }
+                  exportBilanPdf(context, controller, session);
+                },
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('PDF'))),
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),

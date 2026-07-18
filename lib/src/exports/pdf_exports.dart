@@ -12,7 +12,7 @@ Future<void> exportBilanPdf(BuildContext context, AppController controller,
     final bytes = await _buildBilanPdf(session, sales);
     final now = DateTime.now();
     final fileName =
-        'bilan_airsoft_${_pdfFileDate(session.eventDate)}_${_pdfCompactTimestamp(now)}.pdf';
+        'tilly_${_pdfFileDate(session.eventDate)}_${_pdfCompactTimestamp(now)}.pdf';
     final savedFile = await _savePdfFile(fileName, bytes);
     final name = savedFile['name'] ?? fileName;
     if (context.mounted) {
@@ -115,7 +115,7 @@ Future<Uint8List> _buildBilanPdf(
             ],
           ),
         pw.SizedBox(height: 26),
-        _pdfSectionHeader('PAR JOUEUR'),
+        _pdfSectionHeader('PAR PARTICIPANT'),
         pw.Table(
           border: pw.TableBorder(
             horizontalInside:
@@ -134,7 +134,7 @@ Future<Uint8List> _buildBilanPdf(
           },
           children: [
             _pdfBilanTableRow([
-              'JOUEUR',
+              'PARTICIPANT',
               'TYPE',
               'N',
               'ESP',
@@ -448,7 +448,7 @@ Future<void> exportPlayersPdf(
     final bytes = await _buildPlayersPdf(controller, rows);
     final date = DateTime.now();
     final fileName =
-        'joueurs_airsoft_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}.pdf';
+        'tilly_participants_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}.pdf';
     final savedFile = await _savePdfFile(fileName, bytes);
     final name = savedFile['name'] ?? fileName;
     if (context.mounted) {
@@ -586,14 +586,14 @@ Future<Uint8List> _buildPlayersPdf(
         pw.Divider(color: PdfColors.grey500),
         pw.SizedBox(height: 8),
         pw.Text(
-          'HISTORIQUE PAR JOUEUR',
+          'HISTORIQUE PAR PARTICIPANT',
           style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
         ),
         pw.Container(height: 1.2, color: PdfColors.grey900),
         pw.SizedBox(height: 16),
         pw.Row(
           children: [
-            _pdfMetric('JOUEURS', '${rows.length}'),
+            _pdfMetric('PARTICIPANTS', '${rows.length}'),
             pw.SizedBox(width: 6),
             _pdfMetric('VENTES', '$saleCount'),
             pw.SizedBox(width: 6),
@@ -623,7 +623,7 @@ Future<Uint8List> _buildPlayersPdf(
           children: [
             _pdfTableRow(
               [
-                'JOUEUR',
+                'PARTICIPANT',
                 'TYPE',
                 'N',
                 'DETAIL ACHATS',
@@ -775,7 +775,7 @@ Future<void> exportCashPdf(
     final bytes = await _buildCashPdf(controller);
     final date = DateTime.now();
     final fileName =
-        'analyse_caisse_${_pdfFileDate(date)}_${_pdfCompactTimestamp(date)}.pdf';
+        'tilly_analyse_caisse_${_pdfFileDate(date)}_${_pdfCompactTimestamp(date)}.pdf';
     final savedFile = await _savePdfFile(fileName, bytes);
     final name = savedFile['name'] ?? fileName;
     if (context.mounted) {
@@ -1030,7 +1030,7 @@ Future<void> exportKpiPdf(
     final bytes = await _buildKpiPdf(controller, rows);
     final date = DateTime.now();
     final fileName =
-        'kpi_airsoft_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}${date.second.toString().padLeft(2, '0')}.pdf';
+        'tilly_kpi_${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year}_${date.hour.toString().padLeft(2, '0')}${date.minute.toString().padLeft(2, '0')}${date.second.toString().padLeft(2, '0')}.pdf';
     final savedFile = await _savePdfFile(fileName, bytes);
     final name = savedFile['name'] ?? fileName;
     if (context.mounted) {
@@ -1590,6 +1590,6 @@ String _safePdfFileName(String name) {
       .trim()
       .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '-')
       .replaceAll(RegExp(r'^[-._]+|[-._]+$'), '');
-  final safe = baseName.isEmpty ? 'joueurs_airsoft.pdf' : baseName;
+  final safe = baseName.isEmpty ? 'tilly_participants.pdf' : baseName;
   return safe.toLowerCase().endsWith('.pdf') ? safe : '$safe.pdf';
 }

@@ -592,7 +592,7 @@ class AppController extends ChangeNotifier {
     final cleanLastName = lastName.trim();
     final cleanEmail = email.trim().toLowerCase();
     final cleanName = _playerNameFromParts(cleanFirstName, cleanLastName,
-        cleanEmail.isEmpty ? 'Joueur' : cleanEmail);
+        cleanEmail.isEmpty ? 'Participant' : cleanEmail);
     final existing = cleanEmail.isNotEmpty
         ? allPlayers
             .where((p) => p.email.trim().toLowerCase() == cleanEmail)

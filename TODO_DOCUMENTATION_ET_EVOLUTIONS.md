@@ -99,27 +99,17 @@ organizations/default/users/{userId}/snapshots/caisse-main
 
 ### Branding generique
 
-- [ ] Remplacer les textes visibles `Tilly` par un nom generique.
-- [ ] Choisir le nom commercial final.
-- [ ] Mettre a jour les noms de sauvegarde contenant `tilly`.
-- [ ] Mettre a jour les exports PDF si le nom apparait dedans.
-
-Noms possibles :
-
-- `Caisse Buvette Asso`
-- `AssoCaisse Event`
-- `Caisse Evenement Asso`
-- `Buvette Manager`
-- `AssoBuvette`
+- [x] Choisir le nom commercial final.
+- [x] Mettre a jour les exports PDF si le nom apparait dedans.
 
 ### HelloAsso
 
-- [ ] Garder HelloAsso en place comme prevu.
+- [x] Garder HelloAsso en place comme prevu.
 - [x] Ajouter une aide HelloAsso tant que la connexion n'est pas configuree,
       avec un lien vers le tutoriel complet.
-- [ ] Verifier que le secret HelloAsso n'est pas synchronise dans Firebase.
-- [ ] Verifier que le secret HelloAsso n'est pas inclus dans les exports JSON.
-- [ ] Ajouter un message simple si la connexion HelloAsso echoue.
+- [x] Verifier que le secret HelloAsso n'est pas synchronise dans Firebase.
+- [x] Verifier que le secret HelloAsso n'est pas inclus dans les exports JSON.
+- [x] Ajouter un message simple si la connexion HelloAsso echoue.
 
 ## Verifications avant publication
 

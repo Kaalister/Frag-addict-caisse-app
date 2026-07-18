@@ -1191,7 +1191,7 @@ class LocalDatabase {
 
   Future<Map<String, dynamic>> exportAll() async {
     final db = await database;
-    return {
+    return sanitizePortableBackupPayload({
       'version': 3,
       'exportedAt': DateTime.now().toIso8601String(),
       'identity': VisualIdentity.name,
@@ -1209,7 +1209,7 @@ class LocalDatabase {
         'cashCountLines': await db.query('cash_count_lines'),
         'appSettings': await _exportAppSettings(db),
       },
-    };
+    });
   }
 
   Future<List<Map<String, Object?>>> _exportAppSettings(Database db) async {
@@ -1354,4 +1354,25 @@ void validateBackupPayload(Map<String, dynamic> payload) {
       throw FormatException('Sauvegarde invalide : données "$key" illisibles');
     }
   }
+}
+
+Map<String, dynamic> sanitizePortableBackupPayload(
+    Map<String, dynamic> sourcePayload) {
+  final payload =
+      Map<String, dynamic>.from(jsonDecode(jsonEncode(sourcePayload)) as Map);
+  final data = payload['data'];
+  if (data is! Map) return payload;
+  final rows = data['appSettings'];
+  if (rows is! List) return payload;
+  for (final row in rows.whereType<Map>()) {
+    if (row['key'] != 'helloasso_settings') continue;
+    try {
+      final settings = HelloAssoSettings.fromJson(
+          Map<String, dynamic>.from(jsonDecode('${row['value']}') as Map));
+      row['value'] = jsonEncode(settings.toJson(includeSecret: false));
+    } catch (_) {
+      row['value'] = '{}';
+    }
+  }
+  return payload;
 }

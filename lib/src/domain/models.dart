@@ -299,7 +299,7 @@ class Player {
   factory Player.fromJson(Map<String, dynamic> json) => Player(
         id: '${json['id'] ?? makeId('player')}',
         name:
-            '${json['name'] ?? json['nom'] ?? _playerNameFromParts('${json['firstName'] ?? ''}', '${json['lastName'] ?? ''}', 'Joueur')}',
+            '${json['name'] ?? json['nom'] ?? _playerNameFromParts('${json['firstName'] ?? ''}', '${json['lastName'] ?? ''}', 'Participant')}',
         type: '${json['type'] ?? 'public'}',
         firstName: '${json['firstName'] ?? json['first_name'] ?? ''}',
         lastName: '${json['lastName'] ?? json['last_name'] ?? ''}',
@@ -429,7 +429,8 @@ class Sale {
   factory Sale.fromJson(Map<String, dynamic> json) => Sale(
         id: '${json['id'] ?? makeId('sale')}',
         playerId: '${json['playerId'] ?? json['joueurId'] ?? ''}',
-        playerName: '${json['playerName'] ?? json['joueurNom'] ?? 'Joueur'}',
+        playerName:
+            '${json['playerName'] ?? json['joueurNom'] ?? 'Participant'}',
         playerType: '${json['playerType'] ?? json['joueurType'] ?? 'public'}',
         tariff: '${json['tariff'] ?? json['tarif'] ?? 'public'}',
         items: ((json['items'] ?? []) as List)

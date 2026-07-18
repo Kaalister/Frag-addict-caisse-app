@@ -82,7 +82,7 @@ class _MealsPageState extends State<MealsPage> {
             children: [
               TextField(
                 decoration: const InputDecoration(
-                  labelText: 'Rechercher un joueur ou une note',
+                  labelText: 'Rechercher un participant ou une note',
                   prefixIcon: Icon(Icons.search),
                 ),
                 onChanged: (value) => setState(() => query = value),
@@ -108,7 +108,7 @@ class _MealsPageState extends State<MealsPage> {
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text(
-                  'Ajoutez ou importez des joueurs avant de créer des repas.'),
+                  'Ajoutez ou importez des participants avant de créer des repas.'),
             ),
           )
         else if (controller.mealArticles.isEmpty)
@@ -390,7 +390,7 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
                 if (meal == null)
                   DropdownButtonFormField<String>(
                     initialValue: playerId,
-                    decoration: const InputDecoration(labelText: 'Joueur'),
+                    decoration: const InputDecoration(labelText: 'Participant'),
                     items: [
                       for (final player in controller.players)
                         DropdownMenuItem(
