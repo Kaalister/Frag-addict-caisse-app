@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:tilly/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class _MemoryAppController extends AppController {
   _MemoryAppController() {
@@ -21,7 +24,19 @@ class _MemoryAppController extends AppController {
   }
 }
 
+class _FailingDatabase extends LocalDatabase {
+  @override
+  Future<void> saveAll(AppController state, {bool markUpdated = true}) async {
+    throw StateError('Écriture simulée impossible');
+  }
+}
+
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   test('money formats French euro display', () {
     expect(money(12.5), '12,50 €');
   });
@@ -262,6 +277,263 @@ void main() {
     expect(row.stockInitial, 10);
   });
 
+  test('KPI stock initial comes from the first stock movement', () {
+    final article = Article(
+      id: 'eau',
+      category: 'BOISSONS',
+      type: 'standard',
+      icon: '',
+      name: 'Eau',
+      price: 1,
+      memberPrice: 1,
+      stock: 12,
+      threshold: 1,
+    );
+    final controller = AppController()
+      ..articles = [article]
+      ..stockMovements = [
+        StockMovement(
+          id: 'stock-adjustment',
+          sessionId: 'session-1',
+          articleId: 'eau',
+          movementType: 'adjustment',
+          quantityDelta: 5,
+          stockBefore: 10,
+          stockAfter: 15,
+          reason: 'Réassort',
+          createdAt: DateTime(2026, 5, 25, 9),
+        ),
+        StockMovement(
+          id: 'stock-sale',
+          sessionId: 'session-1',
+          articleId: 'eau',
+          movementType: 'sale',
+          quantityDelta: -3,
+          stockBefore: 15,
+          stockAfter: 12,
+          reason: 'Vente',
+          createdAt: DateTime(2026, 5, 25, 10),
+        ),
+      ];
+
+    final row = kpiRows(controller).single;
+
+    expect(row.stockInitial, 10);
+  });
+
+  test('cancelled sales stay in audit but not in business totals', () {
+    final activeSale = _sale(id: 'sale-active');
+    final cancelledSale = _sale(id: 'sale-cancelled').copyWith(
+      status: 'cancelled',
+      cancelledAt: DateTime(2026, 7, 18),
+      cancellationReason: 'Test',
+    );
+    final controller = AppController()..sales = [activeSale, cancelledSale];
+
+    expect(controller.sales, hasLength(2));
+    expect(controller.activeSales, [activeSale]);
+    expect(controller.paymentTotals()['ESP'], activeSale.total);
+
+    final restored = Sale.fromJson(cancelledSale.toJson());
+    expect(restored.status, 'cancelled');
+    expect(restored.cancelledAt, DateTime(2026, 7, 18));
+    expect(restored.cancellationReason, 'Test');
+  });
+
+  test('checkout rolls memory back when SQLite persistence fails', () async {
+    final article = Article(
+      id: 'article-1',
+      category: 'BOISSONS',
+      type: 'standard',
+      icon: '',
+      name: 'Eau',
+      price: 2,
+      memberPrice: 1.5,
+      stock: 3,
+      threshold: 1,
+    );
+    final player = Player(id: 'player-1', name: 'Participant', type: 'public');
+    final controller = AppController(database: _FailingDatabase())
+      ..activeSession = SessionRecord(
+        id: 'session-1',
+        name: 'Session test',
+        eventDate: DateTime(2026, 7, 18),
+      )
+      ..players = [player]
+      ..articles = [article];
+    controller
+      ..selectPlayer(player)
+      ..addToCart(article);
+
+    await expectLater(
+      controller.checkout('ESP'),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(article.stock, 3);
+    expect(controller.cart, hasLength(1));
+    expect(controller.cart.single.quantity, 1);
+    expect(controller.sales, isEmpty);
+    expect(controller.stockMovements, isEmpty);
+    expect(controller.pendingStockMovements, isEmpty);
+  });
+
+  test('SQLite keeps cancelled sale items and stock movement links', () async {
+    final tempDirectory = await Directory.systemTemp.createTemp('tilly-test-');
+    final database = LocalDatabase(
+        databasePathOverride: path.join(tempDirectory.path, 'tilly.db'));
+    addTearDown(() async {
+      await database.close();
+      await tempDirectory.delete(recursive: true);
+    });
+
+    final article = Article(
+      id: 'article-1',
+      category: 'BOISSONS',
+      type: 'standard',
+      icon: '',
+      name: 'Eau',
+      price: 2,
+      memberPrice: 1.5,
+      stock: 9,
+      threshold: 2,
+    );
+    final player = Player(id: 'player-1', name: 'Participant', type: 'public');
+    final sale = _sale(id: 'sale-1');
+    final controller = AppController(database: database)
+      ..activeSession = SessionRecord(
+        id: 'session-1',
+        name: 'Session test',
+        eventDate: DateTime(2026, 7, 18),
+      )
+      ..allPlayers = [player]
+      ..players = [player]
+      ..articles = [article]
+      ..articleCategories = ['BOISSONS']
+      ..sales = [sale]
+      ..pendingStockMovements = [
+        StockMovement(
+          id: 'movement-sale',
+          sessionId: 'session-1',
+          articleId: 'article-1',
+          saleId: 'sale-1',
+          movementType: 'sale',
+          quantityDelta: -1,
+          stockBefore: 10,
+          stockAfter: 9,
+          reason: 'Vente',
+          createdAt: DateTime(2026, 7, 18, 10),
+        ),
+      ];
+
+    await database.saveAll(controller);
+    await controller.cancelSale(sale, reason: 'Annulation test');
+
+    final restoredSales = await database.loadSales('session-1');
+    final payload = await database.exportAll();
+    validateBackupPayload(payload);
+    final data = Map<String, dynamic>.from(payload['data'] as Map);
+    final movements = (data['stockMovements'] as List).cast<Map>();
+    final saleItems = (data['saleItems'] as List).cast<Map>();
+
+    expect(restoredSales, hasLength(1));
+    expect(restoredSales.single.status, 'cancelled');
+    expect(restoredSales.single.items, hasLength(1));
+    expect(saleItems, hasLength(1));
+    expect(movements, hasLength(2));
+    expect(movements.every((row) => row['sale_id'] == 'sale-1'), isTrue);
+  });
+
+  test('SQLite v7 meal schema migrates to nullable player foreign key',
+      () async {
+    final tempDirectory =
+        await Directory.systemTemp.createTemp('tilly-migration-test-');
+    final databasePath = path.join(tempDirectory.path, 'tilly-v7.db');
+    final legacyDatabase = await openDatabase(
+      databasePath,
+      version: 7,
+      onCreate: (database, version) async {
+        await database.execute('''
+          CREATE TABLE sessions (
+            id TEXT PRIMARY KEY
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE players (
+            id TEXT PRIMARY KEY
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE sales (
+            id TEXT PRIMARY KEY
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE stock_movements (
+            id TEXT PRIMARY KEY,
+            sale_id TEXT
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE meal_orders (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            player_id TEXT NOT NULL,
+            player_name_snapshot TEXT NOT NULL,
+            player_type_snapshot TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL,
+            sale_id TEXT,
+            payment_method TEXT,
+            meal_article_id TEXT NOT NULL,
+            drink_article_id TEXT,
+            snack_article_id TEXT,
+            formula TEXT NOT NULL,
+            options_json TEXT,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            prepared_at TEXT,
+            served_at TEXT,
+            updated_at TEXT NOT NULL
+          )
+        ''');
+      },
+    );
+    await legacyDatabase.insert('sessions', {'id': 'session-1'});
+    await legacyDatabase.insert('players', {'id': 'player-1'});
+    await legacyDatabase.insert('meal_orders', {
+      'id': 'meal-1',
+      'session_id': 'session-1',
+      'player_id': 'player-1',
+      'player_name_snapshot': 'Participant',
+      'player_type_snapshot': 'public',
+      'source': 'helloasso',
+      'status': 'planned',
+      'meal_article_id': 'article-1',
+      'formula': 'Standard',
+      'created_at': '2026-07-18T10:00:00',
+      'updated_at': '2026-07-18T10:00:00',
+    });
+    await legacyDatabase.close();
+
+    final database = LocalDatabase(databasePathOverride: databasePath);
+    addTearDown(() async {
+      await database.close();
+      await tempDirectory.delete(recursive: true);
+    });
+
+    final meals = await database.loadMeals('session-1');
+    final migratedDatabase = await openDatabase(databasePath);
+    final columns =
+        await migratedDatabase.rawQuery("PRAGMA table_info('meal_orders')");
+    final playerIdColumn =
+        columns.firstWhere((column) => column['name'] == 'player_id');
+    await migratedDatabase.close();
+
+    expect(meals.single.playerId, 'player-1');
+    expect(playerIdColumn['notnull'], 0);
+  });
+
   test('HelloAsso portable settings exclude the client secret', () {
     const settings = HelloAssoSettings(
       organizationSlug: 'tilly',
@@ -389,18 +661,37 @@ void main() {
 
   test('modern backups can restore an empty article catalog', () {
     expect(
-      () => validateBackupPayload({
-        'version': 3,
-        'data': {
-          'sessions': [
-            {'id': 'session-1'}
-          ],
-          'articles': <Object>[],
-          'appSettings': <Object>[],
-        },
-      }),
+      () => validateBackupPayload(_validModernBackup()),
       returnsNormally,
     );
+  });
+
+  test('modern backups reject unknown columns and broken references', () {
+    final unknownColumn = _validModernBackup();
+    ((unknownColumn['data'] as Map)['sessions'] as List).first['unexpected'] =
+        'value';
+    expect(() => validateBackupPayload(unknownColumn), throwsFormatException);
+
+    final brokenReference = _validModernBackup();
+    ((brokenReference['data'] as Map)['sales'] as List).add({
+      'id': 'sale-1',
+      'session_id': 'missing-session',
+      'player_name_snapshot': 'Participant',
+      'player_type_snapshot': 'public',
+      'tariff_applied': 'public',
+      'payment_method': 'ESP',
+      'status': 'active',
+      'total_articles': 2.0,
+      'donation_amount': 0.0,
+      'total_amount': 2.0,
+      'created_at': '2026-07-18T10:00:00',
+    });
+    expect(() => validateBackupPayload(brokenReference), throwsFormatException);
+  });
+
+  test('future backup versions are rejected before replacement', () {
+    final payload = _validModernBackup()..['version'] = 99;
+    expect(() => validateBackupPayload(payload), throwsFormatException);
   });
 
   testWidgets('association rename dialog updates without framework exception',
@@ -579,6 +870,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+Sale _sale({required String id}) => Sale(
+      id: id,
+      playerId: 'player-1',
+      playerName: 'Participant',
+      playerType: 'public',
+      tariff: 'public',
+      items: [
+        SaleItem(
+          articleId: 'article-1',
+          name: 'Eau',
+          icon: '',
+          type: 'standard',
+          quantity: 1,
+          price: 2,
+          publicPrice: 2,
+          memberPrice: 1.5,
+        ),
+      ],
+      totalArticles: 2,
+      donation: 0,
+      payment: 'ESP',
+      session: 'session-1',
+      createdAt: DateTime(2026, 7, 18, 10),
+    );
+
+Map<String, dynamic> _validModernBackup() => {
+      'version': 3,
+      'data': {
+        'sessions': [
+          {
+            'id': 'session-1',
+            'name': 'Session test',
+            'event_date': '2026-07-18T00:00:00',
+            'status': 'open',
+            'created_at': '2026-07-18T00:00:00',
+          }
+        ],
+        'players': <Map<String, Object?>>[],
+        'sessionPlayers': <Map<String, Object?>>[],
+        'articleCategories': <Map<String, Object?>>[],
+        'articles': <Map<String, Object?>>[],
+        'sales': <Map<String, Object?>>[],
+        'saleItems': <Map<String, Object?>>[],
+        'mealOrders': <Map<String, Object?>>[],
+        'stockMovements': <Map<String, Object?>>[],
+        'cashCounts': <Map<String, Object?>>[],
+        'cashCountLines': <Map<String, Object?>>[],
+        'appSettings': <Map<String, Object?>>[],
+      },
+    };
 
 Map<String, dynamic> _backupPayloadWithHelloAssoSecret(String secret) {
   final settings = HelloAssoSettings(

@@ -601,6 +601,8 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
       ),
     ),
   );
+  final noteValue = note.text;
+  note.dispose();
   if (ok != true || !context.mounted) return;
   try {
     if (meal == null) {
@@ -616,7 +618,7 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
         snackArticleId: snackArticleId,
         formula: formula,
         options: options.toList(),
-        note: note.text,
+        note: noteValue,
       );
     } else {
       await controller.updateMeal(
@@ -627,7 +629,7 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
           snackArticleId: snackArticleId,
           formula: formula,
           options: options.toList(),
-          note: note.text.trim(),
+          note: noteValue.trim(),
           updatedAt: DateTime.now(),
         ),
       );

@@ -396,6 +396,9 @@ class Sale {
     required this.payment,
     required this.session,
     required this.createdAt,
+    this.status = 'active',
+    this.cancelledAt,
+    this.cancellationReason = '',
   });
 
   final String id;
@@ -409,8 +412,35 @@ class Sale {
   final String payment;
   final String session;
   final DateTime createdAt;
+  final String status;
+  final DateTime? cancelledAt;
+  final String cancellationReason;
 
   double get total => totalArticles + donation;
+  bool get isActive => status == 'active';
+
+  Sale copyWith({
+    String? playerName,
+    String? status,
+    DateTime? cancelledAt,
+    String? cancellationReason,
+  }) =>
+      Sale(
+        id: id,
+        playerId: playerId,
+        playerName: playerName ?? this.playerName,
+        playerType: playerType,
+        tariff: tariff,
+        items: items,
+        totalArticles: totalArticles,
+        donation: donation,
+        payment: payment,
+        session: session,
+        createdAt: createdAt,
+        status: status ?? this.status,
+        cancelledAt: cancelledAt ?? this.cancelledAt,
+        cancellationReason: cancellationReason ?? this.cancellationReason,
+      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -424,6 +454,9 @@ class Sale {
         'payment': payment,
         'session': session,
         'createdAt': createdAt.toIso8601String(),
+        'status': status,
+        'cancelledAt': cancelledAt?.toIso8601String(),
+        'cancellationReason': cancellationReason,
       };
 
   factory Sale.fromJson(Map<String, dynamic> json) => Sale(
@@ -442,6 +475,9 @@ class Sale {
         session: '${json['session'] ?? ''}',
         createdAt:
             DateTime.tryParse('${json['createdAt'] ?? ''}') ?? DateTime.now(),
+        status: '${json['status'] ?? 'active'}',
+        cancelledAt: DateTime.tryParse('${json['cancelledAt'] ?? ''}'),
+        cancellationReason: '${json['cancellationReason'] ?? ''}',
       );
 }
 

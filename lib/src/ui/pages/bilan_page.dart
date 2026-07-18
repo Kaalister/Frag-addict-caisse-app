@@ -8,12 +8,12 @@ class BilanPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totals = controller.paymentTotals();
-    final donations = controller.sales
+    final donations = controller.activeSales
         .fold<double>(0, (total, sale) => total + sale.donation);
     final total =
         totals.values.fold<double>(0, (total, value) => total + value);
     final sold = <String, ({int quantity, double total})>{};
-    for (final sale in controller.sales) {
+    for (final sale in controller.activeSales) {
       for (final item in sale.items) {
         final current = sold[item.name] ?? (quantity: 0, total: 0.0);
         sold[item.name] = (
@@ -63,7 +63,7 @@ class BilanPage extends StatelessWidget {
                 label: 'Total',
                 value: money(total),
                 color: AppColors.accent,
-                caption: '${controller.sales.length} vente(s)'),
+                caption: '${controller.activeSales.length} vente(s)'),
             MetricCard(
                 label: 'Dons',
                 value: money(donations),

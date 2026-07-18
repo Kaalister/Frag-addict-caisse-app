@@ -138,6 +138,8 @@ class AppUpdateResult {
 }
 
 class AppUpdateService {
+  static const _requestTimeout = Duration(seconds: 15);
+
   static bool get supportedPlatform => Platform.isAndroid || Platform.isWindows;
 
   static Future<AppUpdateResult> check() async {
@@ -152,7 +154,7 @@ class AppUpdateService {
           'Accept': 'application/vnd.github+json',
           'User-Agent': 'TillyUpdateChecker',
         },
-      );
+      ).timeout(_requestTimeout);
       if (response.statusCode != 200) {
         return AppUpdateResult(
             error:

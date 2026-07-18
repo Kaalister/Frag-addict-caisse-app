@@ -465,7 +465,7 @@ Future<void> exportPlayersPdf(
 
 List<PlayerPdfRow> _playerPdfRows(AppController controller) {
   final grouped = <String, List<Sale>>{};
-  for (final sale in controller.sales) {
+  for (final sale in controller.activeSales) {
     grouped.putIfAbsent(sale.playerId, () => []).add(sale);
   }
 

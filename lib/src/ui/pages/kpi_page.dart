@@ -164,7 +164,7 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
   final mealUsed = <String, int>{};
   final associationUsed = <String, int>{};
   final days = <String>{};
-  final selectedSales = sales ?? controller.sales;
+  final selectedSales = sales ?? controller.activeSales;
   final linkedMeals = controller.mealsEnabled
       ? {
           for (final meal in controller.meals)
@@ -201,6 +201,13 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
         (associationUsed[movement.articleId] ?? 0) - movement.quantityDelta;
   }
   final dayCount = max(1, days.length);
+  final movementsByArticle = <String, List<StockMovement>>{};
+  for (final movement in controller.stockMovements) {
+    movementsByArticle.putIfAbsent(movement.articleId, () => []).add(movement);
+  }
+  for (final movements in movementsByArticle.values) {
+    movements.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
   return controller.activeArticles
       .where((a) => a.type == 'standard' && a.threshold > 0)
       .map((a) {
@@ -209,7 +216,10 @@ List<KpiRow> kpiRows(AppController controller, {List<Sale>? sales}) {
     final associationQuantity = associationUsed[a.id] ?? 0;
     final outgoing =
         (stockSold[a.id] ?? 0) + mealQuantity + associationQuantity;
-    final initial = a.stock + outgoing;
+    final articleMovements = movementsByArticle[a.id];
+    final initial = articleMovements == null || articleMovements.isEmpty
+        ? a.stock + outgoing
+        : articleMovements.first.stockBefore;
     final rotation = initial == 0 ? 0.0 : outgoing / initial;
     final suggestion = outgoing > 0 ? ((outgoing / dayCount) * 1.3).ceil() : 0;
     return KpiRow(a, s.quantity, mealQuantity, associationQuantity, outgoing,

@@ -8,7 +8,7 @@ class PlayersPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final salesByPlayer = <String, List<Sale>>{};
-    for (final sale in controller.sales) {
+    for (final sale in controller.activeSales) {
       salesByPlayer.putIfAbsent(sale.playerId, () => []).add(sale);
     }
     final historyEntries = salesByPlayer.entries.toList()

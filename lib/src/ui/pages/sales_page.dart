@@ -169,7 +169,7 @@ class _PlayerPanelState extends State<PlayerPanel> {
                           final player = filteredPlayers[index];
                           final selected =
                               widget.controller.selectedPlayerId == player.id;
-                          final count = widget.controller.sales
+                          final count = widget.controller.activeSales
                               .where((s) => s.playerId == player.id)
                               .length;
                           return ConstrainedBox(

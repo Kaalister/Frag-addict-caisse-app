@@ -3,6 +3,8 @@ part of '../../main.dart';
 class HelloAssoClient {
   HelloAssoClient(this.settings);
 
+  static const _requestTimeout = Duration(seconds: 20);
+
   final HelloAssoSettings settings;
   String? _token;
   DateTime? _tokenExpiresAt;
@@ -25,7 +27,7 @@ class HelloAssoClient {
         'client_id': settings.clientId,
         'client_secret': settings.clientSecret,
       },
-    );
+    ).timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
           'Connexion HelloAsso refusée (${response.statusCode}) en ${settings.isSandbox ? 'sandbox' : 'production'}${_errorDetails(response.body)}');
@@ -45,7 +47,7 @@ class HelloAssoClient {
       final response = await http.get(uri, headers: {
         'Authorization': 'Bearer $token',
         'Accept': 'application/json'
-      });
+      }).timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception(
             'Erreur HelloAsso (${response.statusCode})${_errorDetails(response.body)}');

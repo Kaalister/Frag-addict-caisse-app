@@ -1,7 +1,10 @@
 part of '../../main.dart';
 
 class AppController extends ChangeNotifier {
-  final LocalDatabase _database = LocalDatabase();
+  AppController({LocalDatabase? database})
+      : _database = database ?? LocalDatabase();
+
+  final LocalDatabase _database;
   final FirebaseSyncService _syncService = FirebaseSyncService();
   final SecureSettingsService _secureSettings = SecureSettingsService();
   final HelloAssoImportService _helloAssoImport = HelloAssoImportService();
@@ -68,6 +71,8 @@ class AppController extends ChangeNotifier {
   List<Article> get activeArticles => mealsEnabled
       ? articles
       : articles.where((article) => article.category != 'REPAS').toList();
+  List<Sale> get activeSales =>
+      sales.where((sale) => sale.isActive).toList(growable: false);
   List<Article> get visibleArticles => categoryFilter == 'TOUS'
       ? activeArticles
       : activeArticles.where((a) => a.category == categoryFilter).toList();
@@ -312,8 +317,9 @@ class AppController extends ChangeNotifier {
   }
 
   List<Sale> salesForSession(String sessionId) {
-    return salesBySession[sessionId] ??
+    final sessionSales = salesBySession[sessionId] ??
         (activeSession?.id == sessionId ? sales : const <Sale>[]);
+    return sessionSales.where((sale) => sale.isActive).toList(growable: false);
   }
 
   void _cacheActiveSessionSales() {
@@ -367,6 +373,9 @@ class AppController extends ChangeNotifier {
         payment: sale.payment,
         session: importedSession.id,
         createdAt: sale.createdAt,
+        status: sale.status,
+        cancelledAt: sale.cancelledAt,
+        cancellationReason: sale.cancellationReason,
       );
     }).toList();
     meals = [];
@@ -749,21 +758,21 @@ class AppController extends ChangeNotifier {
       session: activeSession?.id ?? '',
       createdAt: DateTime.now(),
     );
-    for (final entry
-        in _stockService.cartRequirements(cart, articles).entries) {
-      _applyStockDelta(
-        entry.key,
-        -entry.value,
-        movementType: 'sale',
-        saleId: sale.id,
-        reason: 'Vente ${sale.id}',
-      );
-    }
-    sales.add(sale);
-    cart.clear();
-    donation = 0;
-    notifyListeners();
-    await persist();
+    await _commitMutation(() {
+      for (final entry
+          in _stockService.cartRequirements(cart, articles).entries) {
+        _applyStockDelta(
+          entry.key,
+          -entry.value,
+          movementType: 'sale',
+          saleId: sale.id,
+          reason: 'Vente ${sale.id}',
+        );
+      }
+      sales.add(sale);
+      cart.clear();
+      donation = 0;
+    });
   }
 
   Future<void> createMeal({
@@ -793,33 +802,33 @@ class AppController extends ChangeNotifier {
       note: note,
       payment: payment,
     );
-    _applyMealStockTransition(null, meal);
-    if (meal.isOnsite) {
-      sales.add(_mealService.saleForMeal(meal, player, articles,
-          sessionId: activeSession?.id ?? ''));
-    }
-    meals.add(meal);
-    notifyListeners();
-    await persist();
+    await _commitMutation(() {
+      _applyMealStockTransition(null, meal);
+      if (meal.isOnsite) {
+        sales.add(_mealService.saleForMeal(meal, player, articles,
+            sessionId: activeSession?.id ?? ''));
+      }
+      meals.add(meal);
+    });
   }
 
   Future<void> updateMeal(MealOrder current, MealOrder updated) async {
     final index = meals.indexWhere((meal) => meal.id == current.id);
     if (index < 0) return;
-    _applyMealStockTransition(meals[index], updated);
-    meals[index] = updated;
-    if (updated.isOnsite && updated.saleId.isNotEmpty) {
-      final saleIndex = sales.indexWhere((sale) => sale.id == updated.saleId);
-      final player =
-          players.where((entry) => entry.id == updated.playerId).firstOrNull;
-      if (saleIndex >= 0 && player != null) {
-        sales[saleIndex] = _mealService.saleForMeal(updated, player, articles,
-            sessionId: activeSession?.id ?? '',
-            createdAt: sales[saleIndex].createdAt);
+    await _commitMutation(() {
+      _applyMealStockTransition(meals[index], updated);
+      meals[index] = updated;
+      if (updated.isOnsite && updated.saleId.isNotEmpty) {
+        final saleIndex = sales.indexWhere((sale) => sale.id == updated.saleId);
+        final player =
+            players.where((entry) => entry.id == updated.playerId).firstOrNull;
+        if (saleIndex >= 0 && player != null) {
+          sales[saleIndex] = _mealService.saleForMeal(updated, player, articles,
+              sessionId: activeSession?.id ?? '',
+              createdAt: sales[saleIndex].createdAt);
+        }
       }
-    }
-    notifyListeners();
-    await persist();
+    });
   }
 
   Future<void> prepareMeal(MealOrder meal) async {
@@ -851,15 +860,19 @@ class AppController extends ChangeNotifier {
     if (index < 0) return;
     final current = meals[index];
     if (current.status == 'cancelled') return;
-    final cancelled = current.copyWith(
-        status: 'cancelled', saleId: '', updatedAt: DateTime.now());
-    _applyMealStockTransition(current, cancelled);
-    meals[index] = cancelled;
-    if (current.saleId.isNotEmpty) {
-      sales.removeWhere((sale) => sale.id == current.saleId);
-    }
-    notifyListeners();
-    await persist();
+    final now = DateTime.now();
+    final cancelled = current.copyWith(status: 'cancelled', updatedAt: now);
+    await _commitMutation(() {
+      _applyMealStockTransition(current, cancelled);
+      meals[index] = cancelled;
+      if (current.saleId.isNotEmpty) {
+        _markSaleCancelled(
+          current.saleId,
+          cancelledAt: now,
+          reason: 'Annulation du repas ${current.id}',
+        );
+      }
+    });
   }
 
   void _applyMealStockTransition(MealOrder? previous, MealOrder next) {
@@ -911,16 +924,16 @@ class AppController extends ChangeNotifier {
           'Stock insuffisant : ${article.name} : $quantity requis, ${article.stock} disponible(s)');
     }
     final trimmedNote = note.trim();
-    _applyStockDelta(
-      article,
-      -quantity,
-      movementType: 'association',
-      reason: trimmedNote.isEmpty
-          ? 'Consommation association'
-          : 'Consommation association : $trimmedNote',
-    );
-    notifyListeners();
-    await persist();
+    await _commitMutation(() {
+      _applyStockDelta(
+        article,
+        -quantity,
+        movementType: 'association',
+        reason: trimmedNote.isEmpty
+            ? 'Consommation association'
+            : 'Consommation association : $trimmedNote',
+      );
+    });
   }
 
   void _restoreStock(Sale sale) {
@@ -930,21 +943,42 @@ class AppController extends ChangeNotifier {
         entry.key,
         entry.value,
         movementType: 'cancellation',
+        saleId: sale.id,
         reason: 'Annulation vente ${sale.id}',
       );
     }
   }
 
-  Future<void> cancelSale(Sale sale) async {
+  Future<void> cancelSale(Sale sale, {String reason = ''}) async {
+    if (!sale.isActive) return;
     final meal = meals.where((order) => order.saleId == sale.id).firstOrNull;
     if (meal != null) {
       await cancelMeal(meal);
       return;
     }
-    _restoreStock(sale);
-    sales.removeWhere((s) => s.id == sale.id);
-    notifyListeners();
-    await persist();
+    final now = DateTime.now();
+    await _commitMutation(() {
+      _restoreStock(sale);
+      _markSaleCancelled(
+        sale.id,
+        cancelledAt: now,
+        reason: reason.trim().isEmpty ? 'Annulation manuelle' : reason.trim(),
+      );
+    });
+  }
+
+  void _markSaleCancelled(
+    String saleId, {
+    required DateTime cancelledAt,
+    required String reason,
+  }) {
+    final index = sales.indexWhere((sale) => sale.id == saleId);
+    if (index < 0 || !sales[index].isActive) return;
+    sales[index] = sales[index].copyWith(
+      status: 'cancelled',
+      cancelledAt: cancelledAt,
+      cancellationReason: reason,
+    );
   }
 
   Future<void> upsertArticle(Article article, {Article? replacing}) async {
@@ -958,26 +992,26 @@ class AppController extends ChangeNotifier {
         ..bbAuto = 0
         ..gasAuto = 0;
     }
-    if (!articleCategories.contains(category)) {
-      articleCategories.add(category);
-      articleCategories.sort();
-    }
-    if (replacing == null) {
-      articles.add(article);
-    } else {
-      final desiredStock = article.stock;
-      article.stock = replacing.stock;
-      _applyStockDelta(
-        article,
-        desiredStock - replacing.stock,
-        movementType: 'adjustment',
-        reason: 'Modification manuelle du stock',
-      );
-      final index = articles.indexOf(replacing);
-      articles[index] = article;
-    }
-    notifyListeners();
-    await persist();
+    await _commitMutation(() {
+      if (!articleCategories.contains(category)) {
+        articleCategories.add(category);
+        articleCategories.sort();
+      }
+      if (replacing == null) {
+        articles.add(article);
+      } else {
+        final desiredStock = article.stock;
+        article.stock = replacing.stock;
+        _applyStockDelta(
+          article,
+          desiredStock - replacing.stock,
+          movementType: 'adjustment',
+          reason: 'Modification manuelle du stock',
+        );
+        final index = articles.indexOf(replacing);
+        articles[index] = article;
+      }
+    });
   }
 
   bool containsArticleCategory(String category, {String? except}) {
@@ -1058,14 +1092,23 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> resetSales() async {
-    sales.clear();
-    for (final meal in meals) {
-      meal.saleId = '';
-    }
-    cart.clear();
-    donation = 0;
-    notifyListeners();
-    await persist();
+    final now = DateTime.now();
+    await _commitMutation(() {
+      for (var index = 0; index < sales.length; index++) {
+        final sale = sales[index];
+        if (!sale.isActive) continue;
+        sales[index] = sale.copyWith(
+          status: 'cancelled',
+          cancelledAt: now,
+          cancellationReason: 'Réinitialisation des ventes',
+        );
+      }
+      for (final meal in meals) {
+        meal.saleId = '';
+      }
+      cart.clear();
+      donation = 0;
+    });
   }
 
   Future<void> resetAll() async {
@@ -1098,16 +1141,16 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> resetStock() async {
-    for (final article in articles) {
-      _applyStockDelta(
-        article,
-        -article.stock,
-        movementType: 'adjustment',
-        reason: 'Remise a zero du stock',
-      );
-    }
-    notifyListeners();
-    await persist();
+    await _commitMutation(() {
+      for (final article in articles) {
+        _applyStockDelta(
+          article,
+          -article.stock,
+          movementType: 'adjustment',
+          reason: 'Remise a zero du stock',
+        );
+      }
+    });
   }
 
   Future<void> updateCash(String kind, double value, int quantity) async {
@@ -1126,10 +1169,23 @@ class AppController extends ChangeNotifier {
 
   Map<String, double> paymentTotals() {
     final result = {'ESP': 0.0, 'PayPal': 0.0, 'SumUp': 0.0};
-    for (final sale in sales) {
+    for (final sale in activeSales) {
       result[sale.payment] = (result[sale.payment] ?? 0) + sale.total;
     }
     return result;
+  }
+
+  Future<void> _commitMutation(void Function() mutation) async {
+    final snapshot = _AppMutationSnapshot.capture(this);
+    try {
+      mutation();
+      await persist();
+    } catch (_) {
+      snapshot.restore(this);
+      notifyListeners();
+      rethrow;
+    }
+    notifyListeners();
   }
 
   Map<String, dynamic> backupPayload() => {
@@ -1170,3 +1226,92 @@ class AppController extends ChangeNotifier {
     return _database.exportAll();
   }
 }
+
+class _AppMutationSnapshot {
+  _AppMutationSnapshot({
+    required this.articles,
+    required this.articleStocks,
+    required this.articleCategories,
+    required this.sales,
+    required this.meals,
+    required this.stockMovements,
+    required this.pendingStockMovements,
+    required this.cart,
+    required this.donation,
+  });
+
+  factory _AppMutationSnapshot.capture(AppController controller) =>
+      _AppMutationSnapshot(
+        articles: List<Article>.of(controller.articles),
+        articleStocks: {
+          for (final article in controller.articles) article.id: article.stock,
+        },
+        articleCategories: List<String>.of(controller.articleCategories),
+        sales: List<Sale>.of(controller.sales),
+        meals: controller.meals.map(_copyMealOrder).toList(),
+        stockMovements: List<StockMovement>.of(controller.stockMovements),
+        pendingStockMovements:
+            List<StockMovement>.of(controller.pendingStockMovements),
+        cart: controller.cart
+            .map((item) => CartItem(
+                  articleId: item.articleId,
+                  quantity: item.quantity,
+                  price: item.price,
+                ))
+            .toList(),
+        donation: controller.donation,
+      );
+
+  final List<Article> articles;
+  final Map<String, int> articleStocks;
+  final List<String> articleCategories;
+  final List<Sale> sales;
+  final List<MealOrder> meals;
+  final List<StockMovement> stockMovements;
+  final List<StockMovement> pendingStockMovements;
+  final List<CartItem> cart;
+  final double donation;
+
+  void restore(AppController controller) {
+    for (final article in articles) {
+      final stock = articleStocks[article.id];
+      if (stock != null) article.stock = stock;
+    }
+    controller
+      ..articles = List<Article>.of(articles)
+      ..articleCategories = List<String>.of(articleCategories)
+      ..sales = List<Sale>.of(sales)
+      ..meals = meals.map(_copyMealOrder).toList()
+      ..stockMovements = List<StockMovement>.of(stockMovements)
+      ..pendingStockMovements = List<StockMovement>.of(pendingStockMovements)
+      ..cart = cart
+          .map((item) => CartItem(
+                articleId: item.articleId,
+                quantity: item.quantity,
+                price: item.price,
+              ))
+          .toList()
+      ..donation = donation;
+  }
+}
+
+MealOrder _copyMealOrder(MealOrder meal) => MealOrder(
+      id: meal.id,
+      playerId: meal.playerId,
+      playerName: meal.playerName,
+      playerType: meal.playerType,
+      source: meal.source,
+      status: meal.status,
+      saleId: meal.saleId,
+      payment: meal.payment,
+      mealArticleId: meal.mealArticleId,
+      drinkArticleId: meal.drinkArticleId,
+      snackArticleId: meal.snackArticleId,
+      formula: meal.formula,
+      options: List<String>.of(meal.options),
+      note: meal.note,
+      createdAt: meal.createdAt,
+      preparedAt: meal.preparedAt,
+      servedAt: meal.servedAt,
+      updatedAt: meal.updatedAt,
+    );

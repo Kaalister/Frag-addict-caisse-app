@@ -134,21 +134,27 @@ Future<void> showPlayerDialog(BuildContext context, AppController controller,
       ),
     ),
   );
+  final firstNameValue = firstName.text;
+  final lastNameValue = lastName.text;
+  final emailValue = email.text;
+  firstName.dispose();
+  lastName.dispose();
+  email.dispose();
   if (ok == true &&
-      (firstName.text.trim().isNotEmpty ||
-          lastName.text.trim().isNotEmpty ||
-          email.text.trim().isNotEmpty)) {
+      (firstNameValue.trim().isNotEmpty ||
+          lastNameValue.trim().isNotEmpty ||
+          emailValue.trim().isNotEmpty)) {
     if (player == null) {
       await controller.addPlayer(
-          firstName: firstName.text,
-          lastName: lastName.text,
-          email: email.text,
+          firstName: firstNameValue,
+          lastName: lastNameValue,
+          email: emailValue,
           type: type);
     } else {
       await controller.updatePlayer(player,
-          firstName: firstName.text,
-          lastName: lastName.text,
-          email: email.text,
+          firstName: firstNameValue,
+          lastName: lastNameValue,
+          email: emailValue,
           type: type);
     }
   } else if (ok == false &&
@@ -254,6 +260,7 @@ Future<void> showCreateSessionDialog(
       },
     ),
   );
+  field.dispose();
   if (value != null) {
     try {
       await controller.createSession(value,
@@ -837,11 +844,17 @@ Future<void> showHelloAssoSettingsDialog(
       ),
     ),
   );
+  final organizationSlugValue = organizationSlug.text.trim();
+  final clientIdValue = clientId.text.trim();
+  final clientSecretValue = clientSecret.text.trim();
+  organizationSlug.dispose();
+  clientId.dispose();
+  clientSecret.dispose();
   if (ok == true) {
     await controller.saveHelloAssoSettings(HelloAssoSettings(
-      organizationSlug: organizationSlug.text.trim(),
-      clientId: clientId.text.trim(),
-      clientSecret: clientSecret.text.trim(),
+      organizationSlug: organizationSlugValue,
+      clientId: clientIdValue,
+      clientSecret: clientSecretValue,
       environment: environment,
     ));
     if (context.mounted) snack(context, 'Configuration HelloAsso enregistrée');
@@ -932,6 +945,7 @@ Future<void> showCategoryDialog(BuildContext context, AppController controller,
       ),
     ),
   );
+  name.dispose();
   if (value == null || value == category) return;
   if (category == null) {
     await controller.addArticleCategory(value);
@@ -1109,19 +1123,31 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
       },
     ),
   );
-  if (ok == true && name.text.trim().isNotEmpty) {
+  final iconValue = icon.text.trim();
+  final nameValue = name.text.trim();
+  final priceValue = price.text;
+  final memberPriceValue = memberPrice.text;
+  final stockValue = stock.text;
+  final thresholdValue = threshold.text;
+  icon.dispose();
+  name.dispose();
+  price.dispose();
+  memberPrice.dispose();
+  stock.dispose();
+  threshold.dispose();
+  if (ok == true && nameValue.isNotEmpty) {
     await controller.upsertArticle(
       Article(
         id: article?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
         category: category,
         type: type,
-        icon: icon.text.trim().isEmpty ? '📦' : icon.text.trim(),
-        name: name.text.trim(),
-        price: double.tryParse(price.text.replaceAll(',', '.')) ?? 0,
+        icon: iconValue.isEmpty ? '📦' : iconValue,
+        name: nameValue,
+        price: double.tryParse(priceValue.replaceAll(',', '.')) ?? 0,
         memberPrice:
-            double.tryParse(memberPrice.text.replaceAll(',', '.')) ?? 0,
-        stock: type == 'standard' ? int.tryParse(stock.text) ?? 0 : 0,
-        threshold: type == 'standard' ? int.tryParse(threshold.text) ?? 0 : 0,
+            double.tryParse(memberPriceValue.replaceAll(',', '.')) ?? 0,
+        stock: type == 'standard' ? int.tryParse(stockValue) ?? 0 : 0,
+        threshold: type == 'standard' ? int.tryParse(thresholdValue) ?? 0 : 0,
         bbAuto: 0,
         gasAuto: 0,
       ),
@@ -1200,14 +1226,18 @@ Future<void> showAssociationConsumptionDialog(
       },
     ),
   );
+  final quantityValue = quantity.text.trim();
+  final noteValue = note.text;
+  quantity.dispose();
+  note.dispose();
   if (ok != true) return;
   final article =
       availableArticles.where((entry) => entry.id == articleId).first;
   try {
     await controller.consumeStockForAssociation(
       article,
-      int.tryParse(quantity.text.trim()) ?? 0,
-      note: note.text,
+      int.tryParse(quantityValue) ?? 0,
+      note: noteValue,
     );
     if (context.mounted) snack(context, 'Sortie association enregistrée');
   } on StateError catch (error) {
@@ -1279,6 +1309,7 @@ Future<void> showCashDialog(
       },
     ),
   );
+  given.dispose();
 }
 
 List<String> changeBreakdown(double change) {

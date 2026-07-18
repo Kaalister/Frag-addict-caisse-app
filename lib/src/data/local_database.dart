@@ -1,14 +1,23 @@
 part of '../../main.dart';
 
 class LocalDatabase {
+  LocalDatabase({String? databasePathOverride})
+      : _databasePathOverride = databasePathOverride;
+
   Database? _db;
   String? _userScopeId;
+  final String? _databasePathOverride;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dbPath = await _databasePath();
-    _db = await openDatabase(dbPath,
-        version: 7, onCreate: _create, onUpgrade: _upgrade);
+    _db = await openDatabase(
+      dbPath,
+      version: 8,
+      onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+      onCreate: _create,
+      onUpgrade: _upgrade,
+    );
     return _db!;
   }
 
@@ -23,6 +32,7 @@ class LocalDatabase {
   }
 
   Future<String> _databasePath() async {
+    if (_databasePathOverride != null) return _databasePathOverride;
     final fileName = _databaseFileName(_userScopeId);
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final supportDirectory = await getApplicationSupportDirectory();
@@ -34,6 +44,11 @@ class LocalDatabase {
     final directory = Directory(await getDatabasesPath());
     await directory.create(recursive: true);
     return path.join(directory.path, fileName);
+  }
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
   }
 
   String? _safeUserScope(String? userId) {
@@ -166,7 +181,7 @@ class LocalDatabase {
       CREATE TABLE meal_orders (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
-        player_id TEXT NOT NULL,
+        player_id TEXT,
         player_name_snapshot TEXT NOT NULL,
         player_type_snapshot TEXT NOT NULL,
         source TEXT NOT NULL,
@@ -237,6 +252,7 @@ class LocalDatabase {
       if (oldVersion < 5) await _upgradeToV5(db);
       if (oldVersion < 6) await _upgradeToV6(db);
       if (oldVersion < 7) await _upgradeToV7(db);
+      if (oldVersion < 8) await _upgradeToV8(db);
       return;
     }
     final now = DateTime.now().toIso8601String();
@@ -452,6 +468,63 @@ class LocalDatabase {
       where: 'type = ?',
       whereArgs: ['location'],
     );
+  }
+
+  Future<void> _upgradeToV8(Database db) async {
+    await db.execute('''
+      UPDATE stock_movements
+      SET sale_id = NULL
+      WHERE sale_id IS NOT NULL
+        AND sale_id NOT IN (SELECT id FROM sales)
+    ''');
+    await db.execute('''
+      UPDATE meal_orders
+      SET sale_id = NULL
+      WHERE sale_id IS NOT NULL
+        AND sale_id NOT IN (SELECT id FROM sales)
+    ''');
+    await db.execute('ALTER TABLE meal_orders RENAME TO meal_orders_v7');
+    await db.execute('''
+      CREATE TABLE meal_orders (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        player_id TEXT,
+        player_name_snapshot TEXT NOT NULL,
+        player_type_snapshot TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL,
+        sale_id TEXT,
+        payment_method TEXT,
+        meal_article_id TEXT NOT NULL,
+        drink_article_id TEXT,
+        snack_article_id TEXT,
+        formula TEXT NOT NULL,
+        options_json TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        prepared_at TEXT,
+        served_at TEXT,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE SET NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE SET NULL
+      )
+    ''');
+    await db.execute('''
+      INSERT INTO meal_orders (
+        id, session_id, player_id, player_name_snapshot, player_type_snapshot,
+        source, status, sale_id, payment_method, meal_article_id,
+        drink_article_id, snack_article_id, formula, options_json, note,
+        created_at, prepared_at, served_at, updated_at
+      )
+      SELECT
+        id, session_id, player_id, player_name_snapshot, player_type_snapshot,
+        source, status, sale_id, payment_method, meal_article_id,
+        drink_article_id, snack_article_id, formula, options_json, note,
+        created_at, prepared_at, served_at, updated_at
+      FROM meal_orders_v7
+    ''');
+    await db.execute('DROP TABLE meal_orders_v7');
   }
 
   Future<void> _safeAddColumn(
@@ -796,7 +869,7 @@ class LocalDatabase {
   Future<List<Sale>> loadSales(String sessionId) async {
     final db = await database;
     final rows = await db.query('sales',
-        where: "session_id = ? AND status = 'active'",
+        where: 'session_id = ?',
         whereArgs: [sessionId],
         orderBy: 'created_at ASC');
     final result = <Sale>[];
@@ -830,6 +903,9 @@ class LocalDatabase {
         payment: '${row['payment_method']}',
         session: sessionId,
         createdAt: DateTime.tryParse('${row['created_at']}') ?? DateTime.now(),
+        status: '${row['status'] ?? 'active'}',
+        cancelledAt: DateTime.tryParse('${row['cancelled_at'] ?? ''}'),
+        cancellationReason: '${row['cancellation_reason'] ?? ''}',
       ));
     }
     return result;
@@ -852,7 +928,7 @@ class LocalDatabase {
       }
       return MealOrder(
         id: '${row['id']}',
-        playerId: '${row['player_id']}',
+        playerId: '${row['player_id'] ?? ''}',
         playerName: '${row['player_name_snapshot']}',
         playerType: '${row['player_type_snapshot']}',
         source: '${row['source']}',
@@ -946,24 +1022,25 @@ class LocalDatabase {
     final session = state.activeSession;
     if (session == null) return;
     await db.transaction((txn) async {
-      await txn.insert(
-          'sessions',
-          {
-            'id': session.id,
-            'name': session.name,
-            'event_date': session.eventDate.toIso8601String(),
-            'status': session.status,
-            'notes': session.notes,
-            'helloasso_form_slug': session.helloassoFormSlug,
-            'helloasso_form_type': session.helloassoFormType,
-            'helloasso_event_name': session.helloassoEventName,
-            'helloasso_event_url': session.helloassoEventUrl,
-            'helloasso_event_id': session.helloassoEventId,
-            'helloasso_synced_at': session.helloassoSyncedAt?.toIso8601String(),
-            'created_at': session.createdAt.toIso8601String(),
-            'closed_at': session.closedAt?.toIso8601String(),
-          },
-          conflictAlgorithm: ConflictAlgorithm.replace);
+      await _upsert(
+        txn,
+        'sessions',
+        {
+          'id': session.id,
+          'name': session.name,
+          'event_date': session.eventDate.toIso8601String(),
+          'status': session.status,
+          'notes': session.notes,
+          'helloasso_form_slug': session.helloassoFormSlug,
+          'helloasso_form_type': session.helloassoFormType,
+          'helloasso_event_name': session.helloassoEventName,
+          'helloasso_event_url': session.helloassoEventUrl,
+          'helloasso_event_id': session.helloassoEventId,
+          'helloasso_synced_at': session.helloassoSyncedAt?.toIso8601String(),
+          'created_at': session.createdAt.toIso8601String(),
+          'closed_at': session.closedAt?.toIso8601String(),
+        },
+      );
       await txn.insert('app_settings',
           {'key': 'active_session_id', 'value': session.id, 'updated_at': now},
           conflictAlgorithm: ConflictAlgorithm.replace);
@@ -987,20 +1064,21 @@ class LocalDatabase {
           if (player.id.trim().isNotEmpty) player.id: player,
       }.values.toList();
       for (final player in uniqueAllPlayers) {
-        await txn.insert(
-            'players',
-            {
-              'id': player.id,
-              'name': player.name,
-              'first_name': player.firstName,
-              'last_name': player.lastName,
-              'email': player.email.trim().toLowerCase(),
-              'helloasso_user_id': player.helloassoUserId,
-              'type': player.type,
-              'created_at': now,
-              'updated_at': now,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        await _upsert(
+          txn,
+          'players',
+          {
+            'id': player.id,
+            'name': player.name,
+            'first_name': player.firstName,
+            'last_name': player.lastName,
+            'email': player.email.trim().toLowerCase(),
+            'helloasso_user_id': player.helloassoUserId,
+            'type': player.type,
+            'created_at': now,
+            'updated_at': now,
+          },
+        );
       }
 
       await txn.delete('session_players',
@@ -1040,55 +1118,57 @@ class LocalDatabase {
         await txn.insert('article_categories',
             {'id': categoryId, 'name': article.category, 'sort_order': i},
             conflictAlgorithm: ConflictAlgorithm.ignore);
-        await txn.insert(
-            'articles',
-            {
-              'id': article.id,
-              'category_id': categoryId,
-              'name': article.name,
-              'type': article.type,
-              'icon': article.icon,
-              'price_public': article.price,
-              'price_member': article.memberPrice,
-              'stock_current': article.stock,
-              'stock_alert_threshold': article.threshold,
-              'bb_auto_quantity': article.bbAuto,
-              'gas_auto_quantity': article.gasAuto,
-              'is_active': 1,
-              'sort_order': i,
-              'created_at': now,
-              'updated_at': now,
-            },
-            conflictAlgorithm: ConflictAlgorithm.replace);
+        await _upsert(
+          txn,
+          'articles',
+          {
+            'id': article.id,
+            'category_id': categoryId,
+            'name': article.name,
+            'type': article.type,
+            'icon': article.icon,
+            'price_public': article.price,
+            'price_member': article.memberPrice,
+            'stock_current': article.stock,
+            'stock_alert_threshold': article.threshold,
+            'bb_auto_quantity': article.bbAuto,
+            'gas_auto_quantity': article.gasAuto,
+            'is_active': 1,
+            'sort_order': i,
+            'created_at': now,
+            'updated_at': now,
+          },
+        );
       }
 
-      final saleRows = await txn.query('sales',
-          columns: ['id'], where: 'session_id = ?', whereArgs: [session.id]);
-      final saleIds = saleRows.map((row) => '${row['id']}').toList();
       await txn.delete('meal_orders',
           where: 'session_id = ?', whereArgs: [session.id]);
-      for (final saleId in saleIds) {
-        await txn
-            .delete('sale_items', where: 'sale_id = ?', whereArgs: [saleId]);
-      }
-      await txn
-          .delete('sales', where: 'session_id = ?', whereArgs: [session.id]);
 
       for (final sale in state.sales) {
-        await txn.insert('sales', {
-          'id': sale.id,
-          'session_id': session.id,
-          'player_id': sale.playerId,
-          'player_name_snapshot': sale.playerName,
-          'player_type_snapshot': sale.playerType,
-          'tariff_applied': sale.tariff,
-          'payment_method': sale.payment,
-          'status': 'active',
-          'total_articles': sale.totalArticles,
-          'donation_amount': sale.donation,
-          'total_amount': sale.total,
-          'created_at': sale.createdAt.toIso8601String(),
-        });
+        await _upsert(
+          txn,
+          'sales',
+          {
+            'id': sale.id,
+            'session_id': session.id,
+            'player_id': sale.playerId,
+            'player_name_snapshot': sale.playerName,
+            'player_type_snapshot': sale.playerType,
+            'tariff_applied': sale.tariff,
+            'payment_method': sale.payment,
+            'status': sale.status,
+            'total_articles': sale.totalArticles,
+            'donation_amount': sale.donation,
+            'total_amount': sale.total,
+            'created_at': sale.createdAt.toIso8601String(),
+            'cancelled_at': sale.cancelledAt?.toIso8601String(),
+            'cancellation_reason': sale.cancellationReason.trim().isEmpty
+                ? null
+                : sale.cancellationReason,
+          },
+        );
+        await txn
+            .delete('sale_items', where: 'sale_id = ?', whereArgs: [sale.id]);
         for (final item in sale.items) {
           await txn.insert('sale_items', {
             'id': makeId('sale-item'),
@@ -1164,6 +1244,17 @@ class LocalDatabase {
       }
     });
     state.pendingStockMovements.clear();
+  }
+
+  Future<void> _upsert(
+    Transaction txn,
+    String table,
+    Map<String, Object?> values,
+  ) async {
+    final id = values['id'];
+    final updated =
+        await txn.update(table, values, where: 'id = ?', whereArgs: [id]);
+    if (updated == 0) await txn.insert(table, values);
   }
 
   Future<void> _insertCash(Transaction txn, String sessionId, String kind,
@@ -1326,11 +1417,14 @@ class LocalDatabase {
 void validateBackupPayload(Map<String, dynamic> payload) {
   final version = (payload['version'] as num?)?.round();
   final data = payload['data'];
-  if (version == null || version < 2 || data is! Map) {
+  if (version == null || version < 2 || version > 3 || data is! Map) {
     throw const FormatException('Version ou format de sauvegarde non supporté');
   }
   final typedData = Map<String, dynamic>.from(data);
-  for (final key in ['sessions', 'articles', 'appSettings']) {
+  final requiredTables = version >= 3
+      ? _backupTableSpecs.keys
+      : const ['sessions', 'articles', 'appSettings'];
+  for (final key in requiredTables) {
     if (typedData[key] is! List) {
       throw FormatException('Sauvegarde incomplète : données "$key" absentes');
     }
@@ -1338,20 +1432,411 @@ void validateBackupPayload(Map<String, dynamic> payload) {
   if ((typedData['sessions'] as List).isEmpty) {
     throw const FormatException('Sauvegarde invalide : aucune session');
   }
-  for (final key in [
-    'players',
-    'sessionPlayers',
-    'articleCategories',
-    'sales',
-    'saleItems',
-    'mealOrders',
-    'stockMovements',
-    'cashCounts',
-    'cashCountLines',
-  ]) {
-    final rows = typedData[key];
-    if (rows != null && rows is! List) {
-      throw FormatException('Sauvegarde invalide : données "$key" illisibles');
+
+  final validatedRows = <String, List<Map<String, Object?>>>{};
+  for (final entry in _backupTableSpecs.entries) {
+    final rawRows = typedData[entry.key];
+    if (rawRows == null) {
+      validatedRows[entry.key] = const [];
+      continue;
+    }
+    if (rawRows is! List) {
+      throw FormatException(
+          'Sauvegarde invalide : données "${entry.key}" illisibles');
+    }
+    final rows = <Map<String, Object?>>[];
+    for (var index = 0; index < rawRows.length; index++) {
+      final rawRow = rawRows[index];
+      if (rawRow is! Map) {
+        throw FormatException(
+            'Sauvegarde invalide : ligne ${index + 1} de "${entry.key}" illisible');
+      }
+      Map<String, Object?> row;
+      try {
+        row = Map<String, Object?>.from(rawRow);
+      } catch (_) {
+        throw FormatException(
+            'Sauvegarde invalide : colonnes de "${entry.key}" illisibles');
+      }
+      _validateBackupRow(entry.key, index, row, entry.value);
+      rows.add(row);
+    }
+    _ensureUniqueBackupIds(entry.key, rows);
+    validatedRows[entry.key] = rows;
+  }
+
+  _validateBackupReferences(validatedRows);
+}
+
+class _BackupTableSpec {
+  const _BackupTableSpec({
+    required this.columns,
+    required this.required,
+    this.numeric = const {},
+  });
+
+  final Set<String> columns;
+  final Set<String> required;
+  final Set<String> numeric;
+}
+
+const _backupTableSpecs = <String, _BackupTableSpec>{
+  'sessions': _BackupTableSpec(
+    columns: {
+      'id',
+      'name',
+      'event_date',
+      'status',
+      'notes',
+      'helloasso_form_slug',
+      'helloasso_form_type',
+      'helloasso_event_name',
+      'helloasso_event_url',
+      'helloasso_event_id',
+      'helloasso_synced_at',
+      'created_at',
+      'closed_at',
+    },
+    required: {'id', 'name', 'event_date', 'status', 'created_at'},
+  ),
+  'players': _BackupTableSpec(
+    columns: {
+      'id',
+      'name',
+      'first_name',
+      'last_name',
+      'email',
+      'helloasso_user_id',
+      'type',
+      'created_at',
+      'updated_at',
+      'deleted_at',
+    },
+    required: {'id', 'name', 'type', 'created_at'},
+  ),
+  'sessionPlayers': _BackupTableSpec(
+    columns: {
+      'id',
+      'session_id',
+      'player_id',
+      'name_snapshot',
+      'type_snapshot',
+      'created_at',
+    },
+    required: {
+      'id',
+      'session_id',
+      'name_snapshot',
+      'type_snapshot',
+      'created_at',
+    },
+  ),
+  'articleCategories': _BackupTableSpec(
+    columns: {'id', 'name', 'sort_order'},
+    required: {'id', 'name', 'sort_order'},
+    numeric: {'sort_order'},
+  ),
+  'articles': _BackupTableSpec(
+    columns: {
+      'id',
+      'category_id',
+      'name',
+      'type',
+      'icon',
+      'price_public',
+      'price_member',
+      'stock_current',
+      'stock_alert_threshold',
+      'bb_auto_quantity',
+      'gas_auto_quantity',
+      'is_active',
+      'sort_order',
+      'created_at',
+      'updated_at',
+    },
+    required: {
+      'id',
+      'name',
+      'type',
+      'price_public',
+      'price_member',
+      'stock_current',
+      'stock_alert_threshold',
+      'bb_auto_quantity',
+      'gas_auto_quantity',
+      'is_active',
+      'sort_order',
+      'created_at',
+    },
+    numeric: {
+      'price_public',
+      'price_member',
+      'stock_current',
+      'stock_alert_threshold',
+      'bb_auto_quantity',
+      'gas_auto_quantity',
+      'is_active',
+      'sort_order',
+    },
+  ),
+  'sales': _BackupTableSpec(
+    columns: {
+      'id',
+      'session_id',
+      'session_player_id',
+      'player_id',
+      'player_name_snapshot',
+      'player_type_snapshot',
+      'tariff_applied',
+      'payment_method',
+      'status',
+      'total_articles',
+      'donation_amount',
+      'total_amount',
+      'created_at',
+      'cancelled_at',
+      'cancellation_reason',
+    },
+    required: {
+      'id',
+      'session_id',
+      'player_name_snapshot',
+      'player_type_snapshot',
+      'tariff_applied',
+      'payment_method',
+      'status',
+      'total_articles',
+      'donation_amount',
+      'total_amount',
+      'created_at',
+    },
+    numeric: {'total_articles', 'donation_amount', 'total_amount'},
+  ),
+  'saleItems': _BackupTableSpec(
+    columns: {
+      'id',
+      'sale_id',
+      'article_id',
+      'article_name_snapshot',
+      'article_category_snapshot',
+      'article_type_snapshot',
+      'icon_snapshot',
+      'quantity',
+      'unit_price',
+      'price_public_snapshot',
+      'price_member_snapshot',
+      'line_total',
+    },
+    required: {
+      'id',
+      'sale_id',
+      'article_name_snapshot',
+      'article_type_snapshot',
+      'quantity',
+      'unit_price',
+      'price_public_snapshot',
+      'price_member_snapshot',
+      'line_total',
+    },
+    numeric: {
+      'quantity',
+      'unit_price',
+      'price_public_snapshot',
+      'price_member_snapshot',
+      'line_total',
+    },
+  ),
+  'mealOrders': _BackupTableSpec(
+    columns: {
+      'id',
+      'session_id',
+      'player_id',
+      'player_name_snapshot',
+      'player_type_snapshot',
+      'source',
+      'status',
+      'sale_id',
+      'payment_method',
+      'meal_article_id',
+      'drink_article_id',
+      'snack_article_id',
+      'formula',
+      'options_json',
+      'note',
+      'created_at',
+      'prepared_at',
+      'served_at',
+      'updated_at',
+    },
+    required: {
+      'id',
+      'session_id',
+      'player_name_snapshot',
+      'player_type_snapshot',
+      'source',
+      'status',
+      'meal_article_id',
+      'formula',
+      'created_at',
+      'updated_at',
+    },
+  ),
+  'stockMovements': _BackupTableSpec(
+    columns: {
+      'id',
+      'session_id',
+      'article_id',
+      'sale_id',
+      'movement_type',
+      'quantity_delta',
+      'stock_before',
+      'stock_after',
+      'reason',
+      'created_at',
+    },
+    required: {
+      'id',
+      'session_id',
+      'article_id',
+      'movement_type',
+      'quantity_delta',
+      'stock_before',
+      'stock_after',
+      'created_at',
+    },
+    numeric: {'quantity_delta', 'stock_before', 'stock_after'},
+  ),
+  'cashCounts': _BackupTableSpec(
+    columns: {
+      'id',
+      'session_id',
+      'kind',
+      'total_amount',
+      'created_at',
+      'updated_at',
+    },
+    required: {'id', 'session_id', 'kind', 'total_amount', 'created_at'},
+    numeric: {'total_amount'},
+  ),
+  'cashCountLines': _BackupTableSpec(
+    columns: {
+      'id',
+      'cash_count_id',
+      'denomination',
+      'quantity',
+      'line_total',
+    },
+    required: {
+      'id',
+      'cash_count_id',
+      'denomination',
+      'quantity',
+      'line_total',
+    },
+    numeric: {'denomination', 'quantity', 'line_total'},
+  ),
+  'appSettings': _BackupTableSpec(
+    columns: {'key', 'value', 'updated_at'},
+    required: {'key'},
+  ),
+};
+
+void _validateBackupRow(
+  String table,
+  int index,
+  Map<String, Object?> row,
+  _BackupTableSpec spec,
+) {
+  final unknownColumns = row.keys.where((key) => !spec.columns.contains(key));
+  if (unknownColumns.isNotEmpty) {
+    throw FormatException(
+        'Sauvegarde invalide : colonne "${unknownColumns.first}" inconnue dans "$table"');
+  }
+  for (final column in spec.required) {
+    final value = row[column];
+    if (value == null || (value is String && value.trim().isEmpty)) {
+      throw FormatException(
+          'Sauvegarde invalide : "$table.$column" absent à la ligne ${index + 1}');
+    }
+  }
+  for (final entry in row.entries) {
+    final value = entry.value;
+    if (value == null) continue;
+    final validType =
+        spec.numeric.contains(entry.key) ? value is num : value is String;
+    if (!validType) {
+      throw FormatException(
+          'Sauvegarde invalide : type incorrect pour "$table.${entry.key}"');
+    }
+  }
+}
+
+void _ensureUniqueBackupIds(String table, List<Map<String, Object?>> rows) {
+  final identityColumn = table == 'appSettings' ? 'key' : 'id';
+  final identities = <String>{};
+  for (final row in rows) {
+    final identity = '${row[identityColumn] ?? ''}';
+    if (!identities.add(identity)) {
+      throw FormatException(
+          'Sauvegarde invalide : identifiant dupliqué dans "$table"');
+    }
+  }
+}
+
+void _validateBackupReferences(
+    Map<String, List<Map<String, Object?>>> rowsByTable) {
+  Set<String> ids(String table) =>
+      rowsByTable[table]!.map((row) => '${row['id']}').toSet();
+
+  final sessions = ids('sessions');
+  final players = ids('players');
+  final sessionPlayers = ids('sessionPlayers');
+  final categories = ids('articleCategories');
+  final articles = ids('articles');
+  final sales = ids('sales');
+  final cashCounts = ids('cashCounts');
+
+  void check(
+    String table,
+    String column,
+    Set<String> targets, {
+    required String targetLabel,
+  }) {
+    for (final row in rowsByTable[table]!) {
+      final value = row[column];
+      if (value == null || '$value'.isEmpty) continue;
+      if (!targets.contains('$value')) {
+        throw FormatException(
+            'Sauvegarde invalide : "$table.$column" référence $targetLabel absent');
+      }
+    }
+  }
+
+  check('sessionPlayers', 'session_id', sessions, targetLabel: 'une session');
+  check('sessionPlayers', 'player_id', players, targetLabel: 'un participant');
+  check('articles', 'category_id', categories, targetLabel: 'une catégorie');
+  check('sales', 'session_id', sessions, targetLabel: 'une session');
+  check('sales', 'session_player_id', sessionPlayers,
+      targetLabel: 'un participant de session');
+  check('sales', 'player_id', players, targetLabel: 'un participant');
+  check('saleItems', 'sale_id', sales, targetLabel: 'une vente');
+  check('saleItems', 'article_id', articles, targetLabel: 'un article');
+  check('mealOrders', 'session_id', sessions, targetLabel: 'une session');
+  check('mealOrders', 'player_id', players, targetLabel: 'un participant');
+  check('mealOrders', 'sale_id', sales, targetLabel: 'une vente');
+  check('stockMovements', 'session_id', sessions, targetLabel: 'une session');
+  check('stockMovements', 'article_id', articles, targetLabel: 'un article');
+  check('stockMovements', 'sale_id', sales, targetLabel: 'une vente');
+  check('cashCounts', 'session_id', sessions, targetLabel: 'une session');
+  check('cashCountLines', 'cash_count_id', cashCounts,
+      targetLabel: 'un comptage');
+
+  for (final row in rowsByTable['appSettings']!) {
+    if (row['key'] != 'active_session_id') continue;
+    final activeSessionId = '${row['value'] ?? ''}';
+    if (activeSessionId.isNotEmpty && !sessions.contains(activeSessionId)) {
+      throw const FormatException(
+          'Sauvegarde invalide : la session active est absente');
     }
   }
 }
