@@ -3,6 +3,8 @@
 Ce fichier liste uniquement ce qu'il reste a relire ou modifier pour vendre
 l'application avec un tuto de mise en place simple : installation + Firebase.
 
+Derniere mise a jour : 2026-07-18.
+
 ## Documentation a relire
 
 - [ ] `documentation/MISE_EN_PLACE.md`
@@ -54,7 +56,8 @@ organizations/default/users/{userId}/snapshots/caisse-main
 
 - [x] V1 : recommander un seul compte Firebase partage par association dans le
       guide de mise en place.
-- [ ] Afficher cette recommandation dans l'application.
+- [ ] Afficher cette recommandation dans l'application, par exemple dans l'aide
+      Firebase ou dans le parcours `Activer Firebase`.
 - [ ] V2 eventuelle : gerer plusieurs comptes dans une meme association.
 
 ### Onboarding minimal
@@ -63,8 +66,12 @@ organizations/default/users/{userId}/snapshots/caisse-main
 - [x] Ajouter un acces direct via l'onglet `Config > Firebase`.
 - [x] Ajouter une aide Firebase lorsque le compte n'est pas connecte, avec un
       lien vers le tutoriel complet.
-- [ ] Ajouter un rappel de sauvegarde JSON avant mise a jour ou restauration.
-- [ ] Ajouter une mention courte : outil de suivi non certifie.
+- [x] Ajouter une sauvegarde JSON avant mise a jour depuis l'ecran de mise a
+      jour.
+- [x] Ajouter une sauvegarde JSON avant restauration Firebase ou fichier.
+- [x] Ajouter la mention dans le tuto : outil de suivi non certifie.
+- [x] Afficher dans l'application une mention courte : outil de suivi non
+      certifie.
 
 ### Version web app pour iOS
 
@@ -122,3 +129,7 @@ organizations/default/users/{userId}/snapshots/caisse-main
       Firebase.
 - [ ] Faire une sauvegarde JSON avant et apres le test.
 - [ ] Verifier que la mention "outil non certifie" est visible.
+
+## Mettre en place un suivit
+
+- [x] connecter mon firebase perso pour suivre les metrique de l'applications : crash, nombre d'utilisateurs etc ...

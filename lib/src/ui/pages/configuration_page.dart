@@ -1,4 +1,24 @@
-part of '../../../main.dart';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+
+import '../../config/app_config.dart';
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../exports/pdf_exports.dart';
+import '../../platform/backup_and_links.dart';
+import '../../services/app_update_service.dart';
+import '../../services/firebase_bootstrap.dart';
+import '../../services/firebase_sync_service.dart';
+import '../dialogs.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class ArticlesPricePage extends StatelessWidget {
   const ArticlesPricePage({required this.controller, super.key});
@@ -146,7 +166,7 @@ class _ConfigPageState extends State<ConfigPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
   }
 
   @override
@@ -206,6 +226,10 @@ class _ConfigPageState extends State<ConfigPage>
                   child: _ConfigTabLabel(
                       icon: Icons.warning_amber, title: 'Remise à zéro'),
                 ),
+                Tab(
+                  child: _ConfigTabLabel(
+                      icon: Icons.info_outline, title: 'À propos'),
+                ),
               ],
             ),
           ),
@@ -238,6 +262,7 @@ class _ConfigPageState extends State<ConfigPage>
                 ],
               ),
               _ConfigTabBody(children: _buildResetSections(context)),
+              _ConfigTabBody(children: _buildAboutSections()),
             ],
           ),
         ),
@@ -394,55 +419,16 @@ class _ConfigPageState extends State<ConfigPage>
   }
 
   Future<void> _editPrimaryColor(BuildContext context) async {
-    var draftColor = _hexColor(controller.primaryColor);
-    String? error;
     final value = await showDialog<Color>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Couleur primaire'),
-          content: TextFormField(
-            initialValue: draftColor,
-            autofocus: true,
-            decoration: InputDecoration(
-              labelText: 'Couleur hex',
-              hintText: '#C8F135',
-              errorText: error,
-            ),
-            textInputAction: TextInputAction.done,
-            onChanged: (value) {
-              draftColor = value;
-              if (error != null) setState(() => error = null);
-            },
-            onFieldSubmitted: (_) {
-              final parsed = _colorFromHex(draftColor);
-              if (parsed == null) {
-                setState(() => error = 'Format attendu : #RRGGBB');
-                return;
-              }
-              Navigator.pop(context, parsed);
-            },
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler')),
-            FilledButton(
-              onPressed: () {
-                final parsed = _colorFromHex(draftColor);
-                if (parsed == null) {
-                  setState(() => error = 'Format attendu : #RRGGBB');
-                  return;
-                }
-                Navigator.pop(context, parsed);
-              },
-              child: const Text('Valider'),
-            ),
-          ],
-        ),
-      ),
+      builder: (context) =>
+          _PrimaryColorPickerDialog(initialColor: controller.primaryColor),
     );
-    if (value != null) await controller.setPrimaryColor(value);
+    if (value != null) {
+      await Future<void>.delayed(kThemeAnimationDuration);
+      if (!context.mounted) return;
+      await controller.setPrimaryColor(value);
+    }
   }
 
   Future<void> _editAssociationName(BuildContext context) async {
@@ -778,6 +764,50 @@ class _ConfigPageState extends State<ConfigPage>
     ];
   }
 
+  List<Widget> _buildAboutSections() {
+    return [
+      const SectionTitle('À propos'),
+      ConfigSection(
+        title: 'Application',
+        child: const Column(
+          children: [
+            _AboutInfoRow(
+              icon: Icons.local_offer_outlined,
+              label: 'Version',
+              value: appBuildVersion,
+            ),
+            Divider(height: 1, color: AppColors.border),
+            _AboutInfoRow(
+              icon: Icons.code,
+              label: 'Développé par',
+              value: 'Kaalister',
+            ),
+            Divider(height: 1, color: AppColors.border),
+            _AboutInfoRow(
+              icon: Icons.lightbulb_outline,
+              label: "À partir de l'idée originale de",
+              value: 'Joël Jean',
+            ),
+            Divider(height: 1, color: AppColors.border),
+            _AboutInfoRow(
+              icon: Icons.verified_user_outlined,
+              label: 'Certification',
+              value: 'Aucune certification',
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 12),
+      const TacticalCard(
+        borderColor: AppColors.warn,
+        child: Text(
+          "Cette application est fournie comme outil d'aide au suivi et son utilisation, l'exactitude des données saisies, les contrôles de caisse, les déclarations, les obligations comptables, fiscales ou légales, ainsi que toute décision prise à partir des informations affichées, relèvent exclusivement de la responsabilité de l'utilisateur.",
+          style: TextStyle(color: AppColors.muted, height: 1.4),
+        ),
+      ),
+    ];
+  }
+
   String _updateStatusTitle() {
     if (!kReleaseMode) return 'Mode développement';
     if (!AppUpdateService.supportedPlatform) return 'Plateforme non suivie';
@@ -806,22 +836,22 @@ class _ConfigPageState extends State<ConfigPage>
 
   String _updateStatusDescription() {
     if (!kReleaseMode) {
-      return 'Le contrôle forcé est actif uniquement dans les builds release. Version build : $_appBuildVersion.';
+      return 'Le contrôle forcé est actif uniquement dans les builds release. Version build : $appBuildVersion.';
     }
     if (!AppUpdateService.supportedPlatform) {
       return 'Le contrôle GitHub est prévu pour Android et Windows.';
     }
     final update = updateResult?.update;
     if (update != null) {
-      return 'Version $_appBuildVersion installée, version ${update.latestVersion} publiée sur GitHub. Fichier : ${update.assetName}. Une copie locale est créée avant le téléchargement.';
+      return 'Version $appBuildVersion installée, version ${update.latestVersion} publiée sur GitHub. Fichier : ${update.assetName}. Une copie locale est créée avant le téléchargement.';
     }
     if (updateResult?.error != null) {
-      return '${updateResult!.error} Version build : $_appBuildVersion.';
+      return '${updateResult!.error} Version build : $appBuildVersion.';
     }
     final latest = updateResult?.latestVersion;
     return latest == null
-        ? 'Version build : $_appBuildVersion.'
-        : 'Version build : $_appBuildVersion. Dernière version GitHub : $latest.';
+        ? 'Version build : $appBuildVersion.'
+        : 'Version build : $appBuildVersion. Dernière version GitHub : $latest.';
   }
 }
 
@@ -854,6 +884,33 @@ class _ConfigTabLabel extends StatelessWidget {
         const SizedBox(width: 8),
         Text(title),
       ],
+    );
+  }
+}
+
+class _AboutInfoRow extends StatelessWidget {
+  const _AboutInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(icon, color: context.primaryAccent),
+      title: Text(label),
+      subtitle: Text(
+        value,
+        style: const TextStyle(
+          color: AppColors.text,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
@@ -927,6 +984,109 @@ const _themeColorPresets = <Color>[
   Color(0xFF4CAF50),
 ];
 
+class _PrimaryColorPickerDialog extends StatefulWidget {
+  const _PrimaryColorPickerDialog({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_PrimaryColorPickerDialog> createState() =>
+      _PrimaryColorPickerDialogState();
+}
+
+class _PrimaryColorPickerDialogState extends State<_PrimaryColorPickerDialog> {
+  late Color _draftColor;
+
+  Color get _color => _draftColor.withAlpha(0xFF);
+
+  @override
+  void initState() {
+    super.initState();
+    _draftColor = widget.initialColor.withAlpha(0xFF);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previewTextColor =
+        _color.computeLuminance() > 0.45 ? Colors.black : Colors.white;
+    return AlertDialog(
+      title: const Text('Couleur primaire'),
+      contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                height: 54,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _color,
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _hexColor(_color),
+                  style: TextStyle(
+                    color: previewTextColor,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.4,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ColorPicker(
+                pickerColor: _color,
+                onColorChanged: (color) =>
+                    setState(() => _draftColor = color.withAlpha(0xFF)),
+                paletteType: PaletteType.hsvWithHue,
+                enableAlpha: false,
+                labelTypes: const [],
+                displayThumbColor: true,
+                portraitOnly: true,
+                colorPickerWidth: 280,
+                pickerAreaHeightPercent: 0.62,
+                pickerAreaBorderRadius: BorderRadius.circular(8),
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final color in _themeColorPresets)
+                    _ThemeColorSwatch(
+                      color: color,
+                      selected: _color.toARGB32() == color.toARGB32(),
+                      onTap: () => setState(() => _draftColor = color),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => setState(() => _draftColor = AppColors.accent),
+          icon: const Icon(Icons.restart_alt),
+          label: const Text('Réinitialiser'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _color),
+          child: const Text('Valider'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ThemeColorSwatch extends StatelessWidget {
   const _ThemeColorSwatch({
     required this.color,
@@ -964,12 +1124,6 @@ class _ThemeColorSwatch extends StatelessWidget {
       ),
     );
   }
-}
-
-Color? _colorFromHex(String value) {
-  final parsed = _parseColorValue(value);
-  if (parsed == null) return null;
-  return Color(parsed);
 }
 
 String _hexColor(Color color) {

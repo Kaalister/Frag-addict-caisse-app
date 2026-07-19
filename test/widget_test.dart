@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:tilly/main.dart';
+import 'package:tilly/tilly.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -22,11 +23,70 @@ class _MemoryAppController extends AppController {
     appSettings = appSettings.copyWith(associationName: value.trim());
     notifyListeners();
   }
+
+  @override
+  Future<void> setPrimaryColor(Color value) async {
+    appSettings = appSettings.copyWith(primaryColorValue: value.toARGB32());
+    notifyListeners();
+  }
+
+  @override
+  Future<void> addPlayer({
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String type,
+  }) async {
+    final cleanFirstName = firstName.trim();
+    final cleanLastName = lastName.trim();
+    final cleanEmail = email.trim().toLowerCase();
+    final player = Player(
+      id: 'player-${allPlayers.length + 1}',
+      name: playerNameFromParts(cleanFirstName, cleanLastName,
+          cleanEmail.isEmpty ? 'Participant' : cleanEmail),
+      type: type,
+      firstName: cleanFirstName,
+      lastName: cleanLastName,
+      email: cleanEmail,
+    );
+    allPlayers.add(player);
+    players.add(player);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> addArticleCategory(String category) async {
+    final normalized = normalizedCategoryName(category);
+    if (normalized.isEmpty || containsArticleCategory(normalized)) return;
+    articleCategories.add(normalized);
+    articleCategories.sort();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> upsertArticle(Article article, {Article? replacing}) async {
+    final category = normalizedCategoryName(article.category).isEmpty
+        ? 'DIVERS'
+        : normalizedCategoryName(article.category);
+    article.category = category;
+    if (!articleCategories.contains(category)) {
+      articleCategories.add(category);
+      articleCategories.sort();
+    }
+    if (replacing == null) {
+      articles.add(article);
+    } else {
+      final index = articles.indexOf(replacing);
+      if (index >= 0) articles[index] = article;
+    }
+    notifyListeners();
+  }
 }
 
 class _FailingDatabase extends LocalDatabase {
   @override
-  Future<void> saveAll(AppController state, {bool markUpdated = true}) async {
+  Future<void> saveAll(PersistableAppState state,
+      {bool markUpdated = true}) async {
     throw StateError('Écriture simulée impossible');
   }
 }
@@ -46,8 +106,42 @@ void main() {
     expect(defaultArticleCategories(), [
       'BOISSONS',
       'REPAS',
+      'SNACKING',
       'GOODIES',
       'LOCATION',
+    ]);
+  });
+
+  test('meal snack articles use the SNACKING category', () {
+    final controller = AppController()
+      ..articles = [
+        Article(
+          id: 'snacs',
+          category: 'SNACS',
+          type: 'standard',
+          icon: '',
+          name: 'Chips',
+          price: 1,
+          memberPrice: 1,
+          stock: 12,
+          threshold: 1,
+        ),
+        Article(
+          id: 'snacking',
+          category: 'SNACKING',
+          type: 'standard',
+          icon: '',
+          name: 'Ancien snack',
+          price: 1,
+          memberPrice: 1,
+          stock: 8,
+          threshold: 1,
+        ),
+      ];
+
+    expect(controller.snackArticles.map((article) => article.id), [
+      'snacs',
+      'snacking',
     ]);
   });
 
@@ -720,6 +814,148 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.associationName, 'Nouvelle asso');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('primary color picker applies preset without hex text field',
+      (tester) async {
+    final controller = _MemoryAppController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(
+          body: ConfigPage(
+            controller: controller,
+            updateResult: null,
+            checkingUpdate: false,
+            onCheckUpdate: () {},
+            onOpenUpdate: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Personnalisée'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Couleur hex'), findsNothing);
+    expect(find.byType(ColorPicker), findsOneWidget);
+
+    await tester.tap(find.byTooltip('#35C8F1').last);
+    await tester.tap(find.widgetWithText(FilledButton, 'Valider'));
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pumpAndSettle();
+
+    expect(controller.primaryColor.toARGB32(), AppColors.accent2.toARGB32());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('article dialog adds item without framework exception',
+      (tester) async {
+    final controller = _MemoryAppController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: ArticlesPricePage(controller: controller)),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Ajouter').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(1), 'Patch test');
+    await tester.enterText(find.byType(TextField).at(2), '2.50');
+    await tester.enterText(find.byType(TextField).at(3), '2.00');
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pumpAndSettle();
+
+    expect(controller.articles.single.name, 'Patch test');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('category dialog adds category without framework exception',
+      (tester) async {
+    final controller = _MemoryAppController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: ArticlesPricePage(controller: controller)),
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Ajouter').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Patch catégorie');
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pumpAndSettle();
+
+    expect(controller.articleCategories, contains('PATCH CATÉGORIE'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('player dialog adds participant without email', (tester) async {
+    final controller = _MemoryAppController();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: PlayersPage(controller: controller)),
+      ),
+    );
+
+    await tester.tap(find.text('Ajouter un participant'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), 'Alice');
+    await tester.enterText(find.byType(TextField).at(1), 'Martin');
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pumpAndSettle();
+
+    expect(controller.players.single.name, 'Alice Martin');
+    expect(controller.players.single.email, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('existing participant dropdown fits large text', (tester) async {
+    final controller = _MemoryAppController()
+      ..allPlayers = [
+        Player(
+          id: 'known-player',
+          name: 'burn out',
+          firstName: 'burn',
+          lastName: 'out',
+          type: 'membre',
+        ),
+      ];
+
+    tester.view.physicalSize = const Size(674, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.35)),
+          child: Scaffold(body: PlayersPage(controller: controller)),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Ajouter un participant'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('burn out').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('burn'), findsOneWidget);
+    expect(find.text('out'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

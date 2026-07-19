@@ -1,4 +1,9 @@
-part of '../../main.dart';
+import 'dart:convert';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../domain/models.dart';
+import 'firebase_bootstrap.dart';
 
 class SecureSettingsService {
   static const _helloAssoSecretPrefix = 'helloasso_client_secret';

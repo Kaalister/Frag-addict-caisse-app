@@ -1,14 +1,32 @@
-part of '../../main.dart';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import '../controllers/app_controller.dart';
+import '../domain/models.dart';
+import '../platform/backup_and_links.dart';
+import '../services/app_update_service.dart';
+import 'pages/bilan_page.dart';
+import 'pages/cash_analysis_page.dart';
+import 'pages/configuration_page.dart';
+import 'pages/kpi_page.dart';
+import 'pages/meals_page.dart';
+import 'pages/players_page.dart';
+import 'pages/sales_page.dart';
+import 'theme.dart';
+import 'widgets/common_widgets.dart';
 
 class RootShell extends StatefulWidget {
-  const RootShell({super.key});
+  const RootShell({required this.controller, super.key});
+
+  final AppController controller;
 
   @override
   State<RootShell> createState() => _RootShellState();
 }
 
 class _RootShellState extends State<RootShell> {
-  final controller = AppController();
   late final Future<void> _initialLoad;
   AppUpdateResult? updateResult;
   bool checkingUpdate = false;
@@ -16,17 +34,13 @@ class _RootShellState extends State<RootShell> {
   String? updateActionError;
   String? updateBackupStatus;
 
+  AppController get controller => widget.controller;
+
   @override
   void initState() {
     super.initState();
     _initialLoad = controller.load();
     _checkForUpdate();
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
   }
 
   Future<void> _checkForUpdate() async {
@@ -101,86 +115,83 @@ class _RootShellState extends State<RootShell> {
             if (mounted) controller.setTab(destinations.first.tabIndex);
           });
         }
-        return Theme(
-          data: caisseTheme(controller.primaryColor),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final tablet = constraints.maxWidth >= 900;
-              final body = IndexedStack(
-                index: selectedIndex,
-                children: [
-                  for (final destination in destinations) destination.page,
-                ],
-              );
-              return Scaffold(
-                appBar: AppBar(
-                  backgroundColor: AppColors.surface,
-                  titleSpacing: 12,
-                  title: Row(
-                    children: [
-                      _AppTitleIcon(controller: controller),
-                      const SizedBox(width: 8),
-                      Flexible(
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final tablet = constraints.maxWidth >= 900;
+            final body = IndexedStack(
+              index: selectedIndex,
+              children: [
+                for (final destination in destinations) destination.page,
+              ],
+            );
+            return Scaffold(
+              appBar: AppBar(
+                backgroundColor: AppColors.surface,
+                titleSpacing: 12,
+                title: Row(
+                  children: [
+                    _AppTitleIcon(controller: controller),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        controller.associationName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w900, letterSpacing: 1.4),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ActionChip(
+                      avatar: const Icon(Icons.flag, size: 16),
+                      label: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 170),
                         child: Text(
-                          controller.associationName,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, letterSpacing: 1.4),
-                        ),
+                            controller.session.isEmpty
+                                ? 'PARTIE'
+                                : controller.session,
+                            overflow: TextOverflow.ellipsis),
                       ),
-                      const SizedBox(width: 8),
-                      ActionChip(
-                        avatar: const Icon(Icons.flag, size: 16),
-                        label: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 170),
-                          child: Text(
-                              controller.session.isEmpty
-                                  ? 'PARTIE'
-                                  : controller.session,
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                        onPressed: () => _editSession(context),
-                      ),
-                    ],
-                  ),
-                  bottom: const PreferredSize(
-                    preferredSize: Size.fromHeight(2),
-                    child: _PrimaryAccentBar(),
-                  ),
+                      onPressed: () => _editSession(context),
+                    ),
+                  ],
                 ),
-                body: tablet
-                    ? Row(
-                        children: [
-                          NavigationRail(
-                            selectedIndex: selectedIndex,
-                            onDestinationSelected: (index) =>
-                                controller.setTab(destinations[index].tabIndex),
-                            backgroundColor: AppColors.surface,
-                            indicatorColor: context.primaryAccent,
-                            labelType: NavigationRailLabelType.all,
-                            destinations: [
-                              for (final destination in destinations)
-                                NavigationRailDestination(
-                                    icon: Icon(destination.icon),
-                                    label: Text(destination.label)),
-                            ],
-                          ),
-                          const VerticalDivider(
-                              width: 1, color: AppColors.border),
-                          Expanded(child: body),
-                        ],
-                      )
-                    : body,
-                bottomNavigationBar: tablet
-                    ? null
-                    : _CompactBottomNavigation(
-                        destinations: destinations,
-                        selectedIndex: selectedIndex,
-                        onDestinationSelected: controller.setTab,
-                      ),
-              );
-            },
-          ),
+                bottom: const PreferredSize(
+                  preferredSize: Size.fromHeight(2),
+                  child: _PrimaryAccentBar(),
+                ),
+              ),
+              body: tablet
+                  ? Row(
+                      children: [
+                        NavigationRail(
+                          selectedIndex: selectedIndex,
+                          onDestinationSelected: (index) =>
+                              controller.setTab(destinations[index].tabIndex),
+                          backgroundColor: AppColors.surface,
+                          indicatorColor: context.primaryAccent,
+                          labelType: NavigationRailLabelType.all,
+                          destinations: [
+                            for (final destination in destinations)
+                              NavigationRailDestination(
+                                  icon: Icon(destination.icon),
+                                  label: Text(destination.label)),
+                          ],
+                        ),
+                        const VerticalDivider(
+                            width: 1, color: AppColors.border),
+                        Expanded(child: body),
+                      ],
+                    )
+                  : body,
+              bottomNavigationBar: tablet
+                  ? null
+                  : _CompactBottomNavigation(
+                      destinations: destinations,
+                      selectedIndex: selectedIndex,
+                      onDestinationSelected: controller.setTab,
+                    ),
+            );
+          },
         );
       },
     );
@@ -629,65 +640,6 @@ class UpdateRequiredScaffold extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class TacticalCard extends StatelessWidget {
-  const TacticalCard(
-      {required this.child,
-      this.padding = const EdgeInsets.all(12),
-      this.borderColor,
-      super.key});
-
-  final Widget child;
-  final EdgeInsets padding;
-  final Color? borderColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(VisualIdentity.radius),
-        border: Border.all(color: borderColor ?? AppColors.border),
-      ),
-      child: child,
-    );
-  }
-}
-
-class SectionTitle extends StatelessWidget {
-  const SectionTitle(this.text, {this.trailing, super.key});
-
-  final String text;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Text(
-              text.toUpperCase(),
-              softWrap: true,
-              style: TextStyle(
-                color: context.primaryAccent,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-              ),
-            ),
-          ),
-          if (trailing != null) ...[
-            const SizedBox(width: 12),
-            trailing!,
-          ],
-        ],
       ),
     );
   }

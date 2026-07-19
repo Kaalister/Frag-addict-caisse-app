@@ -1,4 +1,12 @@
-part of '../../main.dart';
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+
+import '../config/app_config.dart';
+import '../data/local_database.dart';
+import 'firebase_bootstrap.dart';
 
 enum FirebaseSyncAction {
   disabled,
@@ -22,13 +30,13 @@ class FirebaseSyncService {
   FirebaseSyncService();
 
   DocumentReference<Map<String, dynamic>> _snapshotRef(User user) =>
-      FirebaseFirestore.instance
+      FirebaseBootstrap.firestore
           .collection('organizations')
-          .doc(_firebaseOrganizationId)
+          .doc(firebaseOrganizationId)
           .collection('users')
           .doc(user.uid)
           .collection('snapshots')
-          .doc(_firebaseSnapshotId);
+          .doc(firebaseSnapshotId);
 
   bool get isAvailable =>
       FirebaseBootstrap.initialized && FirebaseBootstrap.currentUser != null;

@@ -1,4 +1,8 @@
-part of '../../main.dart';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../domain/models.dart';
 
 class HelloAssoClient {
   HelloAssoClient(this.settings);
@@ -124,7 +128,7 @@ class HelloAssoClient {
       final itemId = '${map['id'] ?? ''}';
       final key = email.isNotEmpty
           ? email
-          : _playerNameFromParts(firstName, lastName,
+          : playerNameFromParts(firstName, lastName,
               itemId.isEmpty ? makeId('helloasso') : itemId);
       final registrant = HelloAssoRegistrant(
         firstName: firstName,
@@ -169,7 +173,7 @@ class HelloAssoClient {
       if (email.isEmpty && firstName.isEmpty && lastName.isEmpty) continue;
       final key = email.isNotEmpty
           ? email
-          : _playerNameFromParts(firstName, lastName, makeId('helloasso'));
+          : playerNameFromParts(firstName, lastName, makeId('helloasso'));
       byEmail[key] = HelloAssoRegistrant(
         firstName: firstName,
         lastName: lastName,
@@ -183,8 +187,8 @@ class HelloAssoClient {
   List<HelloAssoRegistrant> _sortedRegistrants(
           Iterable<HelloAssoRegistrant> registrants) =>
       registrants.toList()
-        ..sort((a, b) => _playerNameFromParts(a.firstName, a.lastName, a.email)
-            .compareTo(_playerNameFromParts(b.firstName, b.lastName, b.email)));
+        ..sort((a, b) => playerNameFromParts(a.firstName, a.lastName, a.email)
+            .compareTo(playerNameFromParts(b.firstName, b.lastName, b.email)));
 
   String _emailFromCustomFields(Map<String, dynamic> item) {
     final customFields = (item['customFields'] as List?) ?? const [];

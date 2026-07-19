@@ -27,6 +27,7 @@ synchronisation entre appareils et l'import d'inscrits a un evenement.
   `Downloads`.
 - Synchronisation manuelle Firebase Auth/Cloud Firestore lorsque configuree.
 - Import optionnel d'evenements et de joueurs payants depuis HelloAsso.
+- Suivi developpeur Android optionnel avec Firebase Analytics et Crashlytics.
 - Verification des mises a jour publiees sur GitHub dans les builds release
   Android et Windows.
 
@@ -128,6 +129,16 @@ une sauvegarde locale de securite. Aucun transfert ne se fait au demarrage.
 La procedure de creation et de configuration Firebase est detaillee dans
 [`documentation/FIREBASE_SETUP.md`](documentation/FIREBASE_SETUP.md).
 
+### Firebase monitoring developpeur, optionnel
+
+Le suivi des crashs et des utilisateurs actifs utilise un Firebase separe de
+la synchronisation configurable dans l'application. Il se configure au moment
+du build Android avec le `google-services.json` du projet monitoring, sans
+ecran de saisie dans l'application.
+
+La procedure est detaillee dans
+[`documentation/FIREBASE_MONITORING_SETUP.md`](documentation/FIREBASE_MONITORING_SETUP.md).
+
 ### HelloAsso, optionnel
 
 Dans **Config > HelloAsso**, renseigner le slug de l'association, un client ID,
@@ -180,6 +191,8 @@ En mode developpement, la base et le snapshot Firebase utilisent un suffixe
 | `firebase_core` | Initialisation Firebase |
 | `firebase_auth` | Connexion email/mot de passe pour la synchronisation |
 | `cloud_firestore` | Stockage du snapshot synchronise |
+| `firebase_analytics` | Mesure d'usage Android pour le Firebase developpeur |
+| `firebase_crashlytics` | Remontee des crashs Android pour le Firebase developpeur |
 | `http` | Appels API HelloAsso et controle des Releases GitHub |
 | `flutter_lints` et `flutter_test` | Analyse statique et tests |
 
@@ -233,7 +246,10 @@ flutter build windows --release
 ```
 
 Le build APK release signe necessite un keystore Android et un fichier local
-`android/key.properties`. Le build Windows doit etre execute depuis Windows.
+`android/key.properties`. Le monitoring Android peut etre ajoute avec
+`android/app/google-services.json`, comme explique dans
+[`documentation/FIREBASE_MONITORING_SETUP.md`](documentation/FIREBASE_MONITORING_SETUP.md).
+Le build Windows doit etre execute depuis Windows.
 
 ## Publication Des Releases
 
@@ -254,6 +270,10 @@ configures :
 | `ANDROID_STORE_PASSWORD` | Mot de passe du keystore |
 | `ANDROID_KEY_PASSWORD` | Mot de passe de la cle |
 | `ANDROID_KEY_ALIAS` | Alias de signature |
+
+Pour le monitoring Android, ajouter aussi le secret
+`TILLY_MONITORING_GOOGLE_SERVICES_JSON_BASE64` indique dans
+[`documentation/FIREBASE_MONITORING_SETUP.md`](documentation/FIREBASE_MONITORING_SETUP.md).
 
 Le keystore et son alias constituent l'identite de l'application installee.
 Ils doivent etre archives et reutilises pour toutes les releases Android :

@@ -1,4 +1,11 @@
-part of '../../../main.dart';
+import 'package:flutter/material.dart';
+
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../platform/backup_and_links.dart';
+import '../dialogs.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class CaissePage extends StatelessWidget {
   const CaissePage({required this.controller, super.key});
@@ -42,21 +49,144 @@ class CaissePage extends StatelessWidget {
                 ],
               ),
             ),
-            DraggableScrollableSheet(
-              minChildSize: .1,
-              initialChildSize: .1,
-              maxChildSize: 1,
-              snap: true,
-              snapSizes: const [.1, 1],
-              builder: (context, scrollController) => CartPanel(
-                controller: controller,
-                floating: true,
-                scrollController: scrollController,
-              ),
+            _FloatingCartSheet(
+              controller: controller,
+              cartCount: controller.cartCount,
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _FloatingCartSheet extends StatefulWidget {
+  const _FloatingCartSheet({
+    required this.controller,
+    required this.cartCount,
+  });
+
+  static const closedSize = .1;
+
+  final AppController controller;
+  final int cartCount;
+
+  @override
+  State<_FloatingCartSheet> createState() => _FloatingCartSheetState();
+}
+
+class _FloatingCartSheetState extends State<_FloatingCartSheet>
+    with SingleTickerProviderStateMixin {
+  static const _closedTolerance = .02;
+
+  late final DraggableScrollableController _sheetController;
+  late final AnimationController _shakeController;
+  late final Animation<double> _shakeOffset;
+  var _isClosed = true;
+  var _disableAnimations = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sheetController = DraggableScrollableController()
+      ..addListener(_handleSheetChanged);
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _shakeOffset = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(0), weight: 56),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: -8.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 8,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -8.0, end: 4.0)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 10,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 4.0, end: -5.0)
+            .chain(CurveTween(curve: Curves.easeInOut)),
+        weight: 8,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: -5.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 8,
+      ),
+      TweenSequenceItem(tween: ConstantTween(0), weight: 10),
+    ]).animate(_shakeController);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _disableAnimations = MediaQuery.of(context).disableAnimations;
+    _syncShake();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FloatingCartSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.cartCount != widget.cartCount) {
+      _syncShake();
+    }
+  }
+
+  @override
+  void dispose() {
+    _sheetController
+      ..removeListener(_handleSheetChanged)
+      ..dispose();
+    _shakeController.dispose();
+    super.dispose();
+  }
+
+  void _handleSheetChanged() {
+    final isClosed = _sheetController.size <=
+        _FloatingCartSheet.closedSize + _closedTolerance;
+    if (isClosed == _isClosed) return;
+
+    setState(() => _isClosed = isClosed);
+    _syncShake();
+  }
+
+  void _syncShake() {
+    final shouldShake =
+        !_disableAnimations && _isClosed && widget.cartCount > 0;
+    if (shouldShake) {
+      if (!_shakeController.isAnimating) {
+        _shakeController.repeat();
+      }
+    } else {
+      _shakeController.stop();
+      _shakeController.reset();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _shakeOffset,
+      builder: (context, child) => Transform.translate(
+        offset: Offset(0, _shakeOffset.value),
+        child: child,
+      ),
+      child: DraggableScrollableSheet(
+        controller: _sheetController,
+        minChildSize: _FloatingCartSheet.closedSize,
+        initialChildSize: _FloatingCartSheet.closedSize,
+        maxChildSize: 1,
+        snap: true,
+        snapSizes: const [_FloatingCartSheet.closedSize, 1],
+        builder: (context, scrollController) => CartPanel(
+          controller: widget.controller,
+          floating: true,
+          scrollController: scrollController,
+        ),
+      ),
     );
   }
 }

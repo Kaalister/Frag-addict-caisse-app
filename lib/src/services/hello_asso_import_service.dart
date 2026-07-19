@@ -1,4 +1,6 @@
-part of '../../main.dart';
+import '../domain/models.dart';
+import '../utils/iterable_extensions.dart';
+import 'hello_asso_client.dart';
 
 class HelloAssoImportService {
   Future<List<HelloAssoEvent>> fetchEvents(HelloAssoSettings settings) {
@@ -17,7 +19,7 @@ class HelloAssoImportService {
     required List<Player> sessionPlayers,
   }) {
     final cleanEmail = registrant.email.trim().toLowerCase();
-    final cleanName = _playerNameFromParts(
+    final cleanName = playerNameFromParts(
         registrant.firstName,
         registrant.lastName,
         cleanEmail.isEmpty ? 'Participant HelloAsso' : cleanEmail);

@@ -1,6 +1,20 @@
-part of '../../main.dart';
+import 'dart:math';
 
-class AppController extends ChangeNotifier {
+import 'package:flutter/material.dart';
+
+import '../data/local_database.dart';
+import '../data/persistable_app_state.dart';
+import '../domain/models.dart';
+import '../services/firebase_bootstrap.dart';
+import '../services/firebase_sync_service.dart';
+import '../services/hello_asso_import_service.dart';
+import '../services/meal_service.dart';
+import '../services/secure_settings_service.dart';
+import '../services/stock_service.dart';
+import '../ui/theme.dart';
+import '../utils/iterable_extensions.dart';
+
+class AppController extends ChangeNotifier implements PersistableAppState {
   AppController({LocalDatabase? database})
       : _database = database ?? LocalDatabase();
 
@@ -18,7 +32,9 @@ class AppController extends ChangeNotifier {
       : (FirebaseBootstrap.error ?? 'Firebase non configuré');
   DateTime? lastSyncedAt;
   int tab = 0;
+  @override
   SessionRecord? activeSession;
+  @override
   AppSettings appSettings = const AppSettings();
   List<SessionRecord> sessions = [];
   String categoryFilter = 'TOUS';
@@ -28,17 +44,26 @@ class AppController extends ChangeNotifier {
   HelloAssoSettings helloAssoSettings = const HelloAssoSettings();
   FirebaseSettings firebaseSettings =
       FirebaseBootstrap.settings ?? const FirebaseSettings();
+  @override
   List<Player> allPlayers = [];
+  @override
   List<Player> players = [];
+  @override
   List<Article> articles = defaultArticles();
+  @override
   List<String> articleCategories = defaultArticleCategories();
+  @override
   List<Sale> sales = [];
   Map<String, List<Sale>> salesBySession = {};
+  @override
   List<MealOrder> meals = [];
   List<StockMovement> stockMovements = [];
   List<CartItem> cart = [];
+  @override
   List<StockMovement> pendingStockMovements = [];
+  @override
   Map<String, int> cashStart = {};
+  @override
   Map<String, int> cashEnd = {};
 
   String get session => activeSession?.name ?? '';
@@ -81,8 +106,10 @@ class AppController extends ChangeNotifier {
       : const <Article>[];
   List<Article> get drinkArticles =>
       articles.where((article) => article.category == 'BOISSONS').toList();
-  List<Article> get snackArticles =>
-      articles.where((article) => article.category == 'SNACKING').toList();
+  List<Article> get snackArticles => articles
+      .where((article) =>
+          article.category == 'SNACS' || article.category == 'SNACKING')
+      .toList();
   bool isMainTabVisible(String id) => appSettings.isMainTabVisible(id);
 
   Future<void> load() async {
@@ -258,7 +285,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> disconnectFirebase() async {
     if (FirebaseBootstrap.initialized) {
-      await FirebaseAuth.instance.signOut();
+      await FirebaseBootstrap.auth.signOut();
     }
     await _database.setUserScope(null);
     await _loadLocalState();
@@ -600,7 +627,7 @@ class AppController extends ChangeNotifier {
     final cleanFirstName = firstName.trim();
     final cleanLastName = lastName.trim();
     final cleanEmail = email.trim().toLowerCase();
-    final cleanName = _playerNameFromParts(cleanFirstName, cleanLastName,
+    final cleanName = playerNameFromParts(cleanFirstName, cleanLastName,
         cleanEmail.isEmpty ? 'Participant' : cleanEmail);
     final existing = cleanEmail.isNotEmpty
         ? allPlayers
@@ -632,7 +659,7 @@ class AppController extends ChangeNotifier {
     player.firstName = firstName.trim();
     player.lastName = lastName.trim();
     player.email = email.trim().toLowerCase();
-    player.name = _playerNameFromParts(player.firstName, player.lastName,
+    player.name = playerNameFromParts(player.firstName, player.lastName,
         player.email.isEmpty ? player.name : player.email);
     player.type = type;
     final global = allPlayers.where((p) => p.id == player.id).firstOrNull;
@@ -1161,6 +1188,7 @@ class AppController extends ChangeNotifier {
     await persist();
   }
 
+  @override
   double cashTotal(String kind) {
     final map = kind == 'start' ? cashStart : cashEnd;
     return denominations.fold(

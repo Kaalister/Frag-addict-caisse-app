@@ -1,4 +1,12 @@
-part of '../../main.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+
+import '../controllers/app_controller.dart';
 
 Future<void> copyBackup(BuildContext context, AppController controller) async {
   try {
@@ -30,12 +38,12 @@ Future<Map<String, String>> saveRecoveryBackup(
   return _saveJsonBackupFile('tilly-avant-$operation-$timestamp.json', content);
 }
 
-const _fileImportChannel = MethodChannel('tilly/file_import');
+const fileImportChannel = MethodChannel('tilly/file_import');
 
 Future<Map<String, String>> _saveJsonBackupFile(
     String fileName, String content) async {
   if (Platform.isAndroid) {
-    final savedFile = await _fileImportChannel.invokeMapMethod<String, String>(
+    final savedFile = await fileImportChannel.invokeMapMethod<String, String>(
       'saveJsonBackup',
       {'name': fileName, 'content': content},
     );
@@ -66,7 +74,7 @@ Future<void> openExternalUrl(String url) async {
   }
 
   if (Platform.isAndroid) {
-    await _fileImportChannel.invokeMethod('openUrl', {'url': url});
+    await fileImportChannel.invokeMethod('openUrl', {'url': url});
     return;
   }
 
@@ -125,7 +133,7 @@ Future<void> importBackupFromFile(
 
 Future<Map<String, String>?> _pickJsonBackupFile() async {
   if (Platform.isAndroid) {
-    return _fileImportChannel.invokeMapMethod<String, String>('pickJsonBackup');
+    return fileImportChannel.invokeMapMethod<String, String>('pickJsonBackup');
   }
 
   if (Platform.isWindows) {
@@ -188,7 +196,7 @@ String? _lastNonEmptyLine(String value) {
 }
 
 Future<bool> confirm(BuildContext context, String message) async {
-  return await showDialog<bool>(
+  final result = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Confirmation'),
@@ -204,17 +212,11 @@ Future<bool> confirm(BuildContext context, String message) async {
         ),
       ) ??
       false;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  return result;
 }
 
 void snack(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating));
-}
-
-extension FirstOrNull<T> on Iterable<T> {
-  T? get firstOrNull {
-    final iterator = this.iterator;
-    if (iterator.moveNext()) return iterator.current;
-    return null;
-  }
 }

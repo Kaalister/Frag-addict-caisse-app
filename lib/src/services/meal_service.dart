@@ -1,4 +1,6 @@
-part of '../../main.dart';
+import '../domain/models.dart';
+import '../utils/iterable_extensions.dart';
+import 'stock_service.dart';
 
 class MealService {
   MealOrder createMealOrder({

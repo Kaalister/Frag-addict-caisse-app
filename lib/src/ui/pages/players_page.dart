@@ -1,4 +1,12 @@
-part of '../../../main.dart';
+import 'package:flutter/material.dart';
+
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../exports/pdf_exports.dart';
+import '../../platform/backup_and_links.dart';
+import '../dialogs.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class PlayersPage extends StatelessWidget {
   const PlayersPage({required this.controller, super.key});

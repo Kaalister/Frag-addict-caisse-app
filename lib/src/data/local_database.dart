@@ -1,4 +1,15 @@
-part of '../../main.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../config/app_config.dart';
+import '../domain/models.dart';
+import '../ui/theme.dart';
+import '../utils/iterable_extensions.dart';
+import 'persistable_app_state.dart';
 
 class LocalDatabase {
   LocalDatabase({String? databasePathOverride})
@@ -33,7 +44,7 @@ class LocalDatabase {
 
   Future<String> _databasePath() async {
     if (_databasePathOverride != null) return _databasePathOverride;
-    final fileName = _databaseFileName(_userScopeId);
+    final fileName = databaseFileName(_userScopeId);
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       final supportDirectory = await getApplicationSupportDirectory();
       final directory = Directory(path.join(supportDirectory.path, 'Tilly'));
@@ -1016,7 +1027,8 @@ class LocalDatabase {
     return null;
   }
 
-  Future<void> saveAll(AppController state, {bool markUpdated = true}) async {
+  Future<void> saveAll(PersistableAppState state,
+      {bool markUpdated = true}) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     final session = state.activeSession;

@@ -1,4 +1,17 @@
-part of '../../main.dart';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+
+import '../controllers/app_controller.dart';
+import '../domain/models.dart';
+import '../platform/backup_and_links.dart';
+import '../services/kpi_service.dart';
 
 Future<void> exportBilanPdf(BuildContext context, AppController controller,
     SessionRecord session) async {
@@ -1021,7 +1034,7 @@ String _pdfCompactTimestamp(DateTime date) {
 Future<void> exportKpiPdf(
     BuildContext context, AppController controller) async {
   try {
-    final rows = kpiRows(controller)..sort(_compareKpiRows);
+    final rows = kpiRows(controller)..sort(compareKpiRows);
     if (rows.isEmpty) {
       snack(context, 'Aucune statistique à exporter');
       return;
@@ -1570,7 +1583,7 @@ double _niceChartMax(double value) {
 Future<Map<String, String>> _savePdfFile(
     String fileName, Uint8List bytes) async {
   if (Platform.isAndroid) {
-    final savedFile = await _fileImportChannel.invokeMapMethod<String, String>(
+    final savedFile = await fileImportChannel.invokeMapMethod<String, String>(
       'savePdf',
       {'name': fileName, 'bytes': bytes},
     );

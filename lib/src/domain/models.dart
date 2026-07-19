@@ -1,4 +1,8 @@
-part of '../../main.dart';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
 
 class Article {
   Article({
@@ -79,6 +83,7 @@ String normalizedCategoryName(String category) => category.trim().toUpperCase();
 List<String> defaultArticleCategories() => [
       'BOISSONS',
       'REPAS',
+      'SNACKING',
       'GOODIES',
       'LOCATION',
     ];
@@ -170,14 +175,14 @@ class AppSettings {
       associationName: rawName.isEmpty ? 'TILLY' : rawName,
       appIconPath: '${json['appIconPath'] ?? ''}'.trim(),
       primaryColorValue:
-          _parseColorValue(json['primaryColorValue']) ?? 0xFFC8F135,
+          parseColorValue(json['primaryColorValue']) ?? 0xFFC8F135,
       mealsEnabled: json['mealsEnabled'] != false,
       mainTabVisibility: visibility,
     );
   }
 }
 
-int? _parseColorValue(Object? value) {
+int? parseColorValue(Object? value) {
   if (value is int) return value;
   if (value is num) return value.round();
   final text = '$value'.trim();
@@ -299,7 +304,7 @@ class Player {
   factory Player.fromJson(Map<String, dynamic> json) => Player(
         id: '${json['id'] ?? makeId('player')}',
         name:
-            '${json['name'] ?? json['nom'] ?? _playerNameFromParts('${json['firstName'] ?? ''}', '${json['lastName'] ?? ''}', 'Participant')}',
+            '${json['name'] ?? json['nom'] ?? playerNameFromParts('${json['firstName'] ?? ''}', '${json['lastName'] ?? ''}', 'Participant')}',
         type: '${json['type'] ?? 'public'}',
         firstName: '${json['firstName'] ?? json['first_name'] ?? ''}',
         lastName: '${json['lastName'] ?? json['last_name'] ?? ''}',
@@ -309,8 +314,7 @@ class Player {
       );
 }
 
-String _playerNameFromParts(
-    String firstName, String lastName, String fallback) {
+String playerNameFromParts(String firstName, String lastName, String fallback) {
   final fullName = [firstName.trim(), lastName.trim()]
       .where((part) => part.isNotEmpty)
       .join(' ');

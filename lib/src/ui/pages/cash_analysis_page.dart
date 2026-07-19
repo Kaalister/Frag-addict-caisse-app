@@ -1,4 +1,10 @@
-part of '../../../main.dart';
+import 'package:flutter/material.dart';
+
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../exports/pdf_exports.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class CashAnalysisPage extends StatelessWidget {
   const CashAnalysisPage({required this.controller, super.key});
@@ -44,8 +50,9 @@ class CashAnalysisPage extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final wide = constraints.maxWidth >= 1100;
+        final contentWidth = constraints.maxWidth - 24;
         final cashTabs = SizedBox(
-          height: wide ? 620 : 560,
+          height: _cashTabsHeight(contentWidth, wide: wide),
           child: CashCountTabs(
             startTotal: start,
             endTotal: end,
@@ -259,6 +266,8 @@ class CashCountCard extends StatelessWidget {
                         ? 2
                         : 1;
                 return GridView.builder(
+                  physics: const NeverScrollableScrollPhysics(),
+                  primary: false,
                   itemCount: denominations.length,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
@@ -341,4 +350,25 @@ class CashCountCard extends StatelessWidget {
       ),
     );
   }
+}
+
+double _cashTabsHeight(double width, {required bool wide}) {
+  if (wide) return 620;
+
+  const tabBarHeight = 48.0;
+  const tabSpacing = 10.0;
+  const cardVerticalPadding = 24.0;
+  const itemHeight = 78.0;
+  const itemSpacing = 6.0;
+
+  final gridWidth = width - cardVerticalPadding;
+  final columns = gridWidth >= 520
+      ? 3
+      : gridWidth >= 340
+          ? 2
+          : 1;
+  final rows = (denominations.length / columns).ceil();
+  final gridHeight = rows * itemHeight + (rows - 1) * itemSpacing;
+
+  return tabBarHeight + tabSpacing + cardVerticalPadding + gridHeight;
 }

@@ -1,4 +1,11 @@
-part of '../../../main.dart';
+import 'package:flutter/material.dart';
+
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../exports/pdf_exports.dart';
+import '../../platform/backup_and_links.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class BilanPage extends StatelessWidget {
   const BilanPage({required this.controller, super.key});
@@ -92,46 +99,6 @@ class BilanPage extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class MetricCard extends StatelessWidget {
-  const MetricCard(
-      {required this.label,
-      required this.value,
-      required this.color,
-      this.caption,
-      super.key});
-
-  final String label;
-  final String value;
-  final String? caption;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return TacticalCard(
-      borderColor: color,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(label.toUpperCase(),
-              style: const TextStyle(
-                  color: AppColors.muted, fontSize: 12, letterSpacing: 1.6)),
-          const SizedBox(height: 4),
-          FittedBox(
-              child: Text(value,
-                  style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 24))),
-          if (caption != null)
-            Text(caption!,
-                style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-        ],
-      ),
     );
   }
 }

@@ -1,286 +1,431 @@
-part of '../../main.dart';
+import 'dart:math';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../config/app_config.dart';
+import '../controllers/app_controller.dart';
+import '../domain/models.dart';
+import '../platform/backup_and_links.dart';
+import '../services/firebase_bootstrap.dart';
+import '../services/firebase_sync_service.dart';
+import '../utils/iterable_extensions.dart';
+import 'theme.dart';
+import 'widgets/common_widgets.dart';
 
 const helloAssoConnectionFailedMessage =
     'Connexion HelloAsso impossible. Vérifie la configuration et réessaie.';
 
 Future<void> showPlayerDialog(BuildContext context, AppController controller,
     {Player? player}) async {
-  final splitName = player == null
-      ? (firstName: '', lastName: '')
-      : splitPlayerName(player.firstName.isEmpty && player.lastName.isEmpty
-          ? player.name
-          : '${player.firstName} ${player.lastName}');
-  final firstName = TextEditingController(
-      text: player?.firstName.isNotEmpty == true
-          ? player!.firstName
-          : splitName.firstName);
-  final lastName = TextEditingController(
-      text: player?.lastName.isNotEmpty == true
-          ? player!.lastName
-          : splitName.lastName);
-  final email = TextEditingController(text: player?.email ?? '');
-  var type = player?.type ?? 'public';
-  String? selectedExistingId;
   final existingPlayers = player == null
       ? controller.allPlayers
           .where((candidate) =>
               !controller.players.any((current) => current.id == candidate.id))
           .toList()
       : <Player>[];
-  final ok = await showDialog<bool>(
+  final result = await showDialog<_PlayerDialogResult>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text(
-            player == null ? 'Nouveau participant' : 'Modifier participant'),
-        content: SizedBox(
-          width: min(MediaQuery.sizeOf(context).width - 48, 560),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (existingPlayers.isNotEmpty) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: selectedExistingId,
-                    decoration: const InputDecoration(
-                        labelText: 'Participant existant'),
-                    hint: const Text('Sélectionner un ancien participant'),
-                    items: [
-                      for (final existing in existingPlayers)
-                        DropdownMenuItem(
-                          value: existing.id,
-                          child: Text(existing.name,
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      final existing = existingPlayers
-                          .where((candidate) => candidate.id == value)
-                          .firstOrNull;
-                      if (existing == null) return;
-                      setState(() {
-                        selectedExistingId = existing.id;
-                        final parts = splitPlayerName(
-                            existing.firstName.isEmpty &&
-                                    existing.lastName.isEmpty
-                                ? existing.name
-                                : '${existing.firstName} ${existing.lastName}');
-                        firstName.text = existing.firstName.isNotEmpty
-                            ? existing.firstName
-                            : parts.firstName;
-                        lastName.text = existing.lastName.isNotEmpty
-                            ? existing.lastName
-                            : parts.lastName;
-                        email.text = existing.email;
-                        type = existing.type;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                        child: TextField(
-                            controller: firstName,
-                            autofocus: true,
-                            decoration:
-                                const InputDecoration(labelText: 'Prénom'))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: TextField(
-                            controller: lastName,
-                            decoration:
-                                const InputDecoration(labelText: 'Nom'))),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Email')),
-                const SizedBox(height: 10),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                        value: 'public',
-                        label: Text('Public'),
-                        icon: Icon(Icons.person)),
-                    ButtonSegment(
-                        value: 'membre',
-                        label: Text('Adhérent'),
-                        icon: Icon(Icons.verified_user)),
-                  ],
-                  selected: {type},
-                  onSelectionChanged: (value) =>
-                      setState(() => type = value.first),
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          if (player != null)
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Supprimer')),
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Enregistrer')),
-        ],
-      ),
+    builder: (context) => _PlayerDialog(
+      player: player,
+      existingPlayers: existingPlayers,
     ),
   );
-  final firstNameValue = firstName.text;
-  final lastNameValue = lastName.text;
-  final emailValue = email.text;
-  firstName.dispose();
-  lastName.dispose();
-  email.dispose();
-  if (ok == true &&
-      (firstNameValue.trim().isNotEmpty ||
-          lastNameValue.trim().isNotEmpty ||
-          emailValue.trim().isNotEmpty)) {
-    if (player == null) {
-      await controller.addPlayer(
-          firstName: firstNameValue,
-          lastName: lastNameValue,
-          email: emailValue,
-          type: type);
-    } else {
-      await controller.updatePlayer(player,
-          firstName: firstNameValue,
-          lastName: lastNameValue,
-          email: emailValue,
-          type: type);
-    }
-  } else if (ok == false &&
-      player != null &&
-      context.mounted &&
-      await confirm(context, 'Supprimer ${player.name} ?')) {
+
+  if (result == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  if (result.delete && player != null) {
+    if (!await confirm(context, 'Supprimer ${player.name} ?')) return;
     await controller.removePlayer(player);
+    return;
+  }
+  if (!result.hasInput) return;
+  if (player == null) {
+    await controller.addPlayer(
+      firstName: result.firstName,
+      lastName: result.lastName,
+      email: result.email,
+      type: result.type,
+    );
+  } else {
+    await controller.updatePlayer(
+      player,
+      firstName: result.firstName,
+      lastName: result.lastName,
+      email: result.email,
+      type: result.type,
+    );
+  }
+}
+
+class _PlayerDialogResult {
+  const _PlayerDialogResult.save({
+    required this.firstName,
+    required this.lastName,
+    required this.email,
+    required this.type,
+  }) : delete = false;
+
+  const _PlayerDialogResult.delete()
+      : firstName = '',
+        lastName = '',
+        email = '',
+        type = 'public',
+        delete = true;
+
+  final String firstName;
+  final String lastName;
+  final String email;
+  final String type;
+  final bool delete;
+
+  bool get hasInput =>
+      firstName.trim().isNotEmpty ||
+      lastName.trim().isNotEmpty ||
+      email.trim().isNotEmpty;
+}
+
+class _PlayerDialog extends StatefulWidget {
+  const _PlayerDialog({
+    required this.player,
+    required this.existingPlayers,
+  });
+
+  final Player? player;
+  final List<Player> existingPlayers;
+
+  @override
+  State<_PlayerDialog> createState() => _PlayerDialogState();
+}
+
+class _PlayerDialogState extends State<_PlayerDialog> {
+  late final TextEditingController firstName;
+  late final TextEditingController lastName;
+  late final TextEditingController email;
+  late String type;
+  String? selectedExistingId;
+
+  @override
+  void initState() {
+    super.initState();
+    final player = widget.player;
+    final splitName = player == null
+        ? (firstName: '', lastName: '')
+        : splitPlayerName(player.firstName.isEmpty && player.lastName.isEmpty
+            ? player.name
+            : '${player.firstName} ${player.lastName}');
+    firstName = TextEditingController(
+        text: player?.firstName.isNotEmpty == true
+            ? player!.firstName
+            : splitName.firstName);
+    lastName = TextEditingController(
+        text: player?.lastName.isNotEmpty == true
+            ? player!.lastName
+            : splitName.lastName);
+    email = TextEditingController(text: player?.email ?? '');
+    type = player?.type ?? 'public';
+  }
+
+  @override
+  void dispose() {
+    firstName.dispose();
+    lastName.dispose();
+    email.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = widget.player;
+    return AlertDialog(
+      title:
+          Text(player == null ? 'Nouveau participant' : 'Modifier participant'),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 560),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.existingPlayers.isNotEmpty) ...[
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: selectedExistingId,
+                  decoration:
+                      const InputDecoration(labelText: 'Participant existant'),
+                  hint: const Text('Sélectionner un ancien participant'),
+                  items: [
+                    for (final existing in widget.existingPlayers)
+                      DropdownMenuItem(
+                        value: existing.id,
+                        child: Text(existing.name,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                  ],
+                  onChanged: _selectExistingPlayer,
+                ),
+                const SizedBox(height: 10),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                      child: TextField(
+                          controller: firstName,
+                          autofocus: true,
+                          decoration:
+                              const InputDecoration(labelText: 'Prénom'))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: TextField(
+                          controller: lastName,
+                          decoration: const InputDecoration(labelText: 'Nom'))),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Email')),
+              const SizedBox(height: 10),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                      value: 'public',
+                      label: Text('Public'),
+                      icon: Icon(Icons.person)),
+                  ButtonSegment(
+                      value: 'membre',
+                      label: Text('Adhérent'),
+                      icon: Icon(Icons.verified_user)),
+                ],
+                selected: {type},
+                onSelectionChanged: (value) =>
+                    setState(() => type = value.first),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        if (player != null)
+          TextButton(
+              onPressed: () {
+                FocusScope.of(context).unfocus();
+                Navigator.pop(context, const _PlayerDialogResult.delete());
+              },
+              child: const Text('Supprimer')),
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context, _saveResult());
+            },
+            child: const Text('Enregistrer')),
+      ],
+    );
+  }
+
+  void _selectExistingPlayer(String? value) {
+    final existing = widget.existingPlayers
+        .where((candidate) => candidate.id == value)
+        .firstOrNull;
+    if (existing == null) return;
+    setState(() {
+      selectedExistingId = existing.id;
+      final parts = splitPlayerName(
+          existing.firstName.isEmpty && existing.lastName.isEmpty
+              ? existing.name
+              : '${existing.firstName} ${existing.lastName}');
+      firstName.text =
+          existing.firstName.isNotEmpty ? existing.firstName : parts.firstName;
+      lastName.text =
+          existing.lastName.isNotEmpty ? existing.lastName : parts.lastName;
+      email.text = existing.email;
+      type = existing.type;
+    });
+  }
+
+  _PlayerDialogResult _saveResult() {
+    return _PlayerDialogResult.save(
+      firstName: firstName.text,
+      lastName: lastName.text,
+      email: email.text,
+      type: type,
+    );
   }
 }
 
 Future<void> showCreateSessionDialog(
     BuildContext context, AppController controller) async {
-  final field =
-      TextEditingController(text: 'Partie ${dateLabel(DateTime.now())}');
-  var loadingEvents = controller.helloAssoSettings.isConfigured;
+  final result = await showDialog<_CreateSessionDialogResult>(
+    context: context,
+    builder: (context) => _CreateSessionDialog(controller: controller),
+  );
+  if (result == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  try {
+    await controller.createSession(result.name,
+        helloassoEvent:
+            result.selectedEventEnabled ? result.selectedEvent : null);
+    if (context.mounted) {
+      snack(
+          context,
+          result.selectedEvent == null
+              ? 'Nouvelle session active'
+              : 'Session créée avec participants HelloAsso');
+    }
+  } catch (error) {
+    if (context.mounted) {
+      snack(
+          context,
+          result.selectedEventEnabled
+              ? helloAssoConnectionFailedMessage
+              : 'Création impossible : $error');
+    }
+  }
+}
+
+class _CreateSessionDialogResult {
+  const _CreateSessionDialogResult({
+    required this.name,
+    required this.selectedEventEnabled,
+    required this.selectedEvent,
+  });
+
+  final String name;
+  final bool selectedEventEnabled;
+  final HelloAssoEvent? selectedEvent;
+}
+
+class _CreateSessionDialog extends StatefulWidget {
+  const _CreateSessionDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_CreateSessionDialog> createState() => _CreateSessionDialogState();
+}
+
+class _CreateSessionDialogState extends State<_CreateSessionDialog> {
+  late final TextEditingController field;
+  var loadingEvents = false;
   var helloAssoError = '';
   var selectedEventEnabled = false;
   HelloAssoEvent? selectedEvent;
   var events = <HelloAssoEvent>[];
-  var eventsFetchStarted = false;
-  final value = await showDialog<String>(
-    context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) {
-        if (loadingEvents &&
-            !eventsFetchStarted &&
-            events.isEmpty &&
-            helloAssoError.isEmpty) {
-          eventsFetchStarted = true;
-          controller.fetchHelloAssoEvents().then((loaded) {
-            if (!context.mounted) return;
-            setState(() {
-              events = loaded;
-              loadingEvents = false;
-            });
-          }).catchError((error) {
-            if (!context.mounted) return;
-            setState(() {
-              helloAssoError =
-                  'Connexion impossible. Tu peux continuer sans liaison.';
-              loadingEvents = false;
-            });
-          });
-        }
-        return AlertDialog(
-          title: const Text('Nouvelle session'),
-          content: SizedBox(
-            width: min(MediaQuery.sizeOf(context).width - 48, 560),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: field,
-                    autofocus: true,
-                    decoration:
-                        const InputDecoration(labelText: 'Nom de la partie')),
-                if (controller.helloAssoSettings.isConfigured) ...[
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: selectedEventEnabled,
-                    onChanged: events.isEmpty
-                        ? null
-                        : (value) =>
-                            setState(() => selectedEventEnabled = value),
-                    title: const Text('Lier un évènement HelloAsso'),
-                  ),
-                  if (loadingEvents) const LinearProgressIndicator(),
-                  if (helloAssoError.isNotEmpty)
-                    Text('HelloAsso : $helloAssoError',
-                        style: const TextStyle(color: AppColors.warn)),
-                  if (selectedEventEnabled)
-                    DropdownButtonFormField<HelloAssoEvent>(
-                      initialValue: selectedEvent,
-                      decoration: const InputDecoration(labelText: 'Évènement'),
-                      items: [
-                        for (final event in events)
-                          DropdownMenuItem(
-                              value: event,
-                              child: Text(event.name,
-                                  overflow: TextOverflow.ellipsis)),
-                      ],
-                      onChanged: (event) => setState(() {
-                        selectedEvent = event;
-                        if (event != null) {
-                          field.text = event.name;
-                        }
-                      }),
-                    ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, field.text),
-                child: const Text('Créer')),
-          ],
-        );
-      },
-    ),
-  );
-  field.dispose();
-  if (value != null) {
+
+  @override
+  void initState() {
+    super.initState();
+    field = TextEditingController(text: 'Partie ${dateLabel(DateTime.now())}');
+    loadingEvents = widget.controller.helloAssoSettings.isConfigured;
+    if (loadingEvents) _fetchEvents();
+  }
+
+  @override
+  void dispose() {
+    field.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchEvents() async {
     try {
-      await controller.createSession(value,
-          helloassoEvent: selectedEventEnabled ? selectedEvent : null);
-      if (context.mounted) {
-        snack(
-            context,
-            selectedEvent == null
-                ? 'Nouvelle session active'
-                : 'Session créée avec participants HelloAsso');
-      }
-    } catch (error) {
-      if (context.mounted) {
-        snack(
-            context,
-            selectedEventEnabled
-                ? helloAssoConnectionFailedMessage
-                : 'Création impossible : $error');
-      }
+      final loaded = await widget.controller.fetchHelloAssoEvents();
+      if (!mounted) return;
+      setState(() {
+        events = loaded;
+        loadingEvents = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        helloAssoError =
+            'Connexion impossible. Tu peux continuer sans liaison.';
+        loadingEvents = false;
+      });
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final helloAssoConfigured =
+        widget.controller.helloAssoSettings.isConfigured;
+    return AlertDialog(
+      title: const Text('Nouvelle session'),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: field,
+                autofocus: true,
+                decoration:
+                    const InputDecoration(labelText: 'Nom de la partie')),
+            if (helloAssoConfigured) ...[
+              const SizedBox(height: 12),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: selectedEventEnabled,
+                onChanged: events.isEmpty
+                    ? null
+                    : (value) => setState(() => selectedEventEnabled = value),
+                title: const Text('Lier un évènement HelloAsso'),
+              ),
+              if (loadingEvents) const LinearProgressIndicator(),
+              if (helloAssoError.isNotEmpty)
+                Text('HelloAsso : $helloAssoError',
+                    style: const TextStyle(color: AppColors.warn)),
+              if (selectedEventEnabled)
+                DropdownButtonFormField<HelloAssoEvent>(
+                  isExpanded: true,
+                  initialValue: selectedEvent,
+                  decoration: const InputDecoration(labelText: 'Évènement'),
+                  items: [
+                    for (final event in events)
+                      DropdownMenuItem(
+                          value: event,
+                          child: Text(event.name,
+                              overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (event) => setState(() {
+                    selectedEvent = event;
+                    if (event != null) field.text = event.name;
+                  }),
+                ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(
+                context,
+                _CreateSessionDialogResult(
+                  name: field.text,
+                  selectedEventEnabled: selectedEventEnabled,
+                  selectedEvent: selectedEvent,
+                ),
+              );
+            },
+            child: const Text('Créer')),
+      ],
+    );
   }
 }
 
@@ -362,7 +507,7 @@ Future<void> showFirebaseHelpDialog(BuildContext context) async {
 
   if (openGuide != true || !context.mounted) return;
   try {
-    await openExternalUrl(_firebaseSetupGuideUrl);
+    await openExternalUrl(firebaseSetupGuideUrl);
   } catch (error) {
     if (context.mounted) {
       snack(context, 'Impossible d’ouvrir le tutoriel : $error');
@@ -437,7 +582,7 @@ Future<void> showHelloAssoHelpDialog(BuildContext context,
 
   if (openGuide != true || !context.mounted) return;
   try {
-    await openExternalUrl(_helloAssoSetupGuideUrl);
+    await openExternalUrl(helloAssoSetupGuideUrl);
   } catch (error) {
     if (context.mounted) {
       snack(context, 'Impossible d’ouvrir le tutoriel : $error');
@@ -554,7 +699,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
         settings = enteredSettings;
         editingProject = false;
       }
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await FirebaseBootstrap.auth.signInWithEmailAndPassword(
         email: email.text.trim(),
         password: password.text,
       );
@@ -775,89 +920,125 @@ String _firebaseAuthError(FirebaseAuthException exception) {
 Future<void> showHelloAssoSettingsDialog(
     BuildContext context, AppController controller) async {
   final current = controller.helloAssoSettings;
-  final organizationSlug =
-      TextEditingController(text: current.organizationSlug);
-  final clientId = TextEditingController(text: current.clientId);
-  final clientSecret = TextEditingController(text: current.clientSecret);
-  var environment = current.environment;
-  var showClientSecret = false;
-  final ok = await showDialog<bool>(
+  final settings = await showDialog<HelloAssoSettings>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('Configuration HelloAsso'),
-        content: SizedBox(
-          width: min(MediaQuery.sizeOf(context).width - 48, 560),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                    controller: organizationSlug,
-                    decoration:
-                        const InputDecoration(labelText: 'Organization slug')),
-                const SizedBox(height: 10),
-                TextField(
-                    controller: clientId,
-                    decoration: const InputDecoration(labelText: 'Client ID')),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: clientSecret,
-                  obscureText: !showClientSecret,
-                  decoration: InputDecoration(
-                    labelText: 'Client secret',
-                    suffixIcon: IconButton(
-                      tooltip: showClientSecret
-                          ? 'Masquer le secret'
-                          : 'Afficher le secret',
-                      onPressed: () =>
-                          setState(() => showClientSecret = !showClientSecret),
-                      icon: Icon(showClientSecret
-                          ? Icons.visibility_off
-                          : Icons.visibility),
-                    ),
+    builder: (context) => _HelloAssoSettingsDialog(current: current),
+  );
+  if (settings == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  await controller.saveHelloAssoSettings(settings);
+  if (context.mounted) snack(context, 'Configuration HelloAsso enregistrée');
+}
+
+class _HelloAssoSettingsDialog extends StatefulWidget {
+  const _HelloAssoSettingsDialog({required this.current});
+
+  final HelloAssoSettings current;
+
+  @override
+  State<_HelloAssoSettingsDialog> createState() =>
+      _HelloAssoSettingsDialogState();
+}
+
+class _HelloAssoSettingsDialogState extends State<_HelloAssoSettingsDialog> {
+  late final TextEditingController organizationSlug;
+  late final TextEditingController clientId;
+  late final TextEditingController clientSecret;
+  late String environment;
+  var showClientSecret = false;
+
+  @override
+  void initState() {
+    super.initState();
+    organizationSlug =
+        TextEditingController(text: widget.current.organizationSlug);
+    clientId = TextEditingController(text: widget.current.clientId);
+    clientSecret = TextEditingController(text: widget.current.clientSecret);
+    environment = widget.current.environment;
+  }
+
+  @override
+  void dispose() {
+    organizationSlug.dispose();
+    clientId.dispose();
+    clientSecret.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Configuration HelloAsso'),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 560),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                  controller: organizationSlug,
+                  decoration:
+                      const InputDecoration(labelText: 'Organization slug')),
+              const SizedBox(height: 10),
+              TextField(
+                  controller: clientId,
+                  decoration: const InputDecoration(labelText: 'Client ID')),
+              const SizedBox(height: 10),
+              TextField(
+                controller: clientSecret,
+                obscureText: !showClientSecret,
+                decoration: InputDecoration(
+                  labelText: 'Client secret',
+                  suffixIcon: IconButton(
+                    tooltip: showClientSecret
+                        ? 'Masquer le secret'
+                        : 'Afficher le secret',
+                    onPressed: () =>
+                        setState(() => showClientSecret = !showClientSecret),
+                    icon: Icon(showClientSecret
+                        ? Icons.visibility_off
+                        : Icons.visibility),
                   ),
                 ),
-                const SizedBox(height: 10),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                        value: 'production', label: Text('Production')),
-                    ButtonSegment(value: 'sandbox', label: Text('Sandbox')),
-                  ],
-                  selected: {environment},
-                  onSelectionChanged: (value) =>
-                      setState(() => environment = value.first),
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'production', label: Text('Production')),
+                  ButtonSegment(value: 'sandbox', label: Text('Sandbox')),
+                ],
+                selected: {environment},
+                onSelectionChanged: (value) =>
+                    setState(() => environment = value.first),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Enregistrer')),
-        ],
       ),
-    ),
-  );
-  final organizationSlugValue = organizationSlug.text.trim();
-  final clientIdValue = clientId.text.trim();
-  final clientSecretValue = clientSecret.text.trim();
-  organizationSlug.dispose();
-  clientId.dispose();
-  clientSecret.dispose();
-  if (ok == true) {
-    await controller.saveHelloAssoSettings(HelloAssoSettings(
-      organizationSlug: organizationSlugValue,
-      clientId: clientIdValue,
-      clientSecret: clientSecretValue,
-      environment: environment,
-    ));
-    if (context.mounted) snack(context, 'Configuration HelloAsso enregistrée');
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(
+                context,
+                HelloAssoSettings(
+                  organizationSlug: organizationSlug.text.trim(),
+                  clientId: clientId.text.trim(),
+                  clientSecret: clientSecret.text.trim(),
+                  environment: environment,
+                ),
+              );
+            },
+            child: const Text('Enregistrer')),
+      ],
+    );
   }
 }
 
@@ -899,6 +1080,8 @@ Future<void> showSessionPicker(
     ),
   );
   if (selected != null && selected != controller.activeSession?.id) {
+    await Future<void>.delayed(kThemeAnimationDuration);
+    if (!context.mounted) return;
     await controller.switchSession(selected);
     if (context.mounted) snack(context, 'Session chargée');
   }
@@ -906,47 +1089,16 @@ Future<void> showSessionPicker(
 
 Future<void> showCategoryDialog(BuildContext context, AppController controller,
     {String? category}) async {
-  final name = TextEditingController(text: category ?? '');
-  String? error;
   final value = await showDialog<String>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text(
-            category == null ? 'Nouvelle catégorie' : 'Modifier catégorie'),
-        content: TextField(
-          controller: name,
-          autofocus: true,
-          textCapitalization: TextCapitalization.characters,
-          decoration: InputDecoration(
-              labelText: 'Nom de la catégorie', errorText: error),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler')),
-          FilledButton(
-            onPressed: () {
-              final normalized = normalizedCategoryName(name.text);
-              if (normalized.isEmpty) {
-                setState(() => error = 'Saisissez un nom de catégorie');
-                return;
-              }
-              if (controller.containsArticleCategory(normalized,
-                  except: category)) {
-                setState(() => error = 'Cette catégorie existe déjà');
-                return;
-              }
-              Navigator.pop(context, normalized);
-            },
-            child: const Text('Enregistrer'),
-          ),
-        ],
-      ),
+    builder: (context) => _CategoryDialog(
+      controller: controller,
+      category: category,
     ),
   );
-  name.dispose();
   if (value == null || value == category) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
   if (category == null) {
     await controller.addArticleCategory(value);
     if (context.mounted) snack(context, 'Catégorie ajoutée');
@@ -956,16 +1108,83 @@ Future<void> showCategoryDialog(BuildContext context, AppController controller,
   }
 }
 
+class _CategoryDialog extends StatefulWidget {
+  const _CategoryDialog({
+    required this.controller,
+    required this.category,
+  });
+
+  final AppController controller;
+  final String? category;
+
+  @override
+  State<_CategoryDialog> createState() => _CategoryDialogState();
+}
+
+class _CategoryDialogState extends State<_CategoryDialog> {
+  late final TextEditingController name;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    name = TextEditingController(text: widget.category ?? '');
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final category = widget.category;
+    return AlertDialog(
+      title:
+          Text(category == null ? 'Nouvelle catégorie' : 'Modifier catégorie'),
+      content: TextField(
+        controller: name,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        decoration:
+            InputDecoration(labelText: 'Nom de la catégorie', errorText: error),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    final normalized = normalizedCategoryName(name.text);
+    if (normalized.isEmpty) {
+      setState(() => error = 'Saisissez un nom de catégorie');
+      return;
+    }
+    if (widget.controller
+        .containsArticleCategory(normalized, except: widget.category)) {
+      setState(() => error = 'Cette catégorie existe déjà');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    Navigator.pop(context, normalized);
+  }
+}
+
 Future<void> showArticleDialog(BuildContext context, AppController controller,
     {Article? article}) async {
-  final icon = TextEditingController(text: article?.icon ?? '📦');
-  final name = TextEditingController(text: article?.name ?? '');
-  final price = TextEditingController(text: article?.price.toString() ?? '');
-  final memberPrice =
-      TextEditingController(text: article?.memberPrice.toString() ?? '');
-  final stock = TextEditingController(text: article?.stock.toString() ?? '0');
-  final threshold =
-      TextEditingController(text: article?.threshold.toString() ?? '5');
   final categoryOptions = <String>[...controller.activeArticleCategories]
       .map((category) => category.trim().toUpperCase())
       .where((category) => category.isNotEmpty)
@@ -979,179 +1198,231 @@ Future<void> showArticleDialog(BuildContext context, AppController controller,
       return a.compareTo(b);
     });
   if (categoryOptions.isEmpty) categoryOptions.add('DIVERS');
-  var category =
-      (article?.category ?? categoryOptions.first).trim().toUpperCase();
-  if (!categoryOptions.contains(category)) categoryOptions.add(category);
-  var type =
-      article?.type ?? (category == 'LOCATION' ? 'location' : 'standard');
-  final ok = await showDialog<bool>(
+
+  final draft = await showDialog<Article>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) {
-        return AlertDialog(
-          title: Text(article == null ? 'Nouvel article' : 'Modifier article'),
-          content: SizedBox(
-            width: min(MediaQuery.sizeOf(context).width - 48, 720),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(children: [
-                    SizedBox(
-                        width: 76,
-                        child: TextField(
-                            controller: icon,
-                            decoration:
-                                const InputDecoration(labelText: 'Icône'))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: TextField(
-                            controller: name,
-                            decoration:
-                                const InputDecoration(labelText: 'Nom'))),
-                  ]),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: category,
-                    decoration: const InputDecoration(labelText: 'Catégorie'),
-                    items: [
-                      for (final option in categoryOptions)
-                        DropdownMenuItem(
-                          value: option,
-                          child: Text(option),
-                        ),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => category = value);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<String>(
-                    initialValue: type,
-                    decoration:
-                        const InputDecoration(labelText: 'Type d’article'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'standard', child: Text('Article en stock')),
-                      DropdownMenuItem(
-                          value: 'location', child: Text('Location')),
-                    ],
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => type = value);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TacticalCard(
-                    borderColor:
-                        type == 'location' ? AppColors.sumup : AppColors.border,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                    child: Row(
-                      children: [
-                        Icon(
-                            type == 'location'
-                                ? Icons.assignment_return
-                                : Icons.inventory_2,
-                            color: type == 'location'
-                                ? AppColors.sumup
-                                : AppColors.muted),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            type == 'location'
-                                ? 'Location : aucune sortie de stock automatique'
-                                : 'Type automatique : standard',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                        child: TextField(
-                            controller: price,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                                labelText: 'Prix public'))),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: TextField(
-                            controller: memberPrice,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                                labelText: 'Prix adhérent'))),
-                  ]),
-                  const SizedBox(height: 10),
-                  if (type == 'standard')
-                    Row(children: [
-                      Expanded(
-                          child: TextField(
-                              controller: stock,
-                              keyboardType: TextInputType.number,
-                              decoration:
-                                  const InputDecoration(labelText: 'Stock'))),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: TextField(
-                              controller: threshold,
-                              keyboardType: TextInputType.number,
-                              decoration:
-                                  const InputDecoration(labelText: 'Seuil'))),
-                    ])
-                  else
-                    const Text(
-                      'Une location reste facturable mais ne modifie jamais le stock.',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Enregistrer')),
-          ],
-        );
-      },
+    builder: (context) => _ArticleDialog(
+      article: article,
+      categoryOptions: categoryOptions,
     ),
   );
-  final iconValue = icon.text.trim();
-  final nameValue = name.text.trim();
-  final priceValue = price.text;
-  final memberPriceValue = memberPrice.text;
-  final stockValue = stock.text;
-  final thresholdValue = threshold.text;
-  icon.dispose();
-  name.dispose();
-  price.dispose();
-  memberPrice.dispose();
-  stock.dispose();
-  threshold.dispose();
-  if (ok == true && nameValue.isNotEmpty) {
-    await controller.upsertArticle(
-      Article(
-        id: article?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
-        category: category,
-        type: type,
-        icon: iconValue.isEmpty ? '📦' : iconValue,
-        name: nameValue,
-        price: double.tryParse(priceValue.replaceAll(',', '.')) ?? 0,
-        memberPrice:
-            double.tryParse(memberPriceValue.replaceAll(',', '.')) ?? 0,
-        stock: type == 'standard' ? int.tryParse(stockValue) ?? 0 : 0,
-        threshold: type == 'standard' ? int.tryParse(thresholdValue) ?? 0 : 0,
-        bbAuto: 0,
-        gasAuto: 0,
+
+  if (draft == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  await controller.upsertArticle(draft, replacing: article);
+}
+
+class _ArticleDialog extends StatefulWidget {
+  const _ArticleDialog({
+    required this.article,
+    required this.categoryOptions,
+  });
+
+  final Article? article;
+  final List<String> categoryOptions;
+
+  @override
+  State<_ArticleDialog> createState() => _ArticleDialogState();
+}
+
+class _ArticleDialogState extends State<_ArticleDialog> {
+  late final TextEditingController icon;
+  late final TextEditingController name;
+  late final TextEditingController price;
+  late final TextEditingController memberPrice;
+  late final TextEditingController stock;
+  late final TextEditingController threshold;
+  late String category;
+  late String type;
+
+  @override
+  void initState() {
+    super.initState();
+    final article = widget.article;
+    icon = TextEditingController(text: article?.icon ?? '📦');
+    name = TextEditingController(text: article?.name ?? '');
+    price = TextEditingController(text: article?.price.toString() ?? '');
+    memberPrice =
+        TextEditingController(text: article?.memberPrice.toString() ?? '');
+    stock = TextEditingController(text: article?.stock.toString() ?? '0');
+    threshold =
+        TextEditingController(text: article?.threshold.toString() ?? '5');
+    category = (article?.category ?? widget.categoryOptions.first)
+        .trim()
+        .toUpperCase();
+    if (!widget.categoryOptions.contains(category)) {
+      widget.categoryOptions.add(category);
+    }
+    type = article?.type ?? (category == 'LOCATION' ? 'location' : 'standard');
+  }
+
+  @override
+  void dispose() {
+    icon.dispose();
+    name.dispose();
+    price.dispose();
+    memberPrice.dispose();
+    stock.dispose();
+    threshold.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title:
+          Text(widget.article == null ? 'Nouvel article' : 'Modifier article'),
+      content: SizedBox(
+        width: min(MediaQuery.sizeOf(context).width - 48, 720),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(children: [
+                SizedBox(
+                    width: 76,
+                    child: TextField(
+                        controller: icon,
+                        decoration: const InputDecoration(labelText: 'Icône'))),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: TextField(
+                        controller: name,
+                        decoration: const InputDecoration(labelText: 'Nom'))),
+              ]),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: category,
+                decoration: const InputDecoration(labelText: 'Catégorie'),
+                items: [
+                  for (final option in widget.categoryOptions)
+                    DropdownMenuItem(
+                      value: option,
+                      child: Text(option),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => category = value);
+                },
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: type,
+                decoration: const InputDecoration(labelText: 'Type d’article'),
+                items: const [
+                  DropdownMenuItem(
+                      value: 'standard', child: Text('Article en stock')),
+                  DropdownMenuItem(value: 'location', child: Text('Location')),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => type = value);
+                },
+              ),
+              const SizedBox(height: 10),
+              TacticalCard(
+                borderColor:
+                    type == 'location' ? AppColors.sumup : AppColors.border,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                child: Row(
+                  children: [
+                    Icon(
+                        type == 'location'
+                            ? Icons.assignment_return
+                            : Icons.inventory_2,
+                        color: type == 'location'
+                            ? AppColors.sumup
+                            : AppColors.muted),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        type == 'location'
+                            ? 'Location : aucune sortie de stock automatique'
+                            : 'Type automatique : standard',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                    child: TextField(
+                        controller: price,
+                        keyboardType: TextInputType.number,
+                        decoration:
+                            const InputDecoration(labelText: 'Prix public'))),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: TextField(
+                        controller: memberPrice,
+                        keyboardType: TextInputType.number,
+                        decoration:
+                            const InputDecoration(labelText: 'Prix adhérent'))),
+              ]),
+              const SizedBox(height: 10),
+              if (type == 'standard')
+                Row(children: [
+                  Expanded(
+                      child: TextField(
+                          controller: stock,
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Stock'))),
+                  const SizedBox(width: 8),
+                  Expanded(
+                      child: TextField(
+                          controller: threshold,
+                          keyboardType: TextInputType.number,
+                          decoration:
+                              const InputDecoration(labelText: 'Seuil'))),
+                ])
+              else
+                const Text(
+                  'Une location reste facturable mais ne modifie jamais le stock.',
+                  style: TextStyle(color: AppColors.muted),
+                ),
+            ],
+          ),
+        ),
       ),
-      replacing: article,
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context, _draftArticle());
+            },
+            child: const Text('Enregistrer')),
+      ],
+    );
+  }
+
+  Article? _draftArticle() {
+    final nameValue = name.text.trim();
+    if (nameValue.isEmpty) return null;
+    return Article(
+      id: widget.article?.id ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
+      category: category,
+      type: type,
+      icon: icon.text.trim().isEmpty ? '📦' : icon.text.trim(),
+      name: nameValue,
+      price: double.tryParse(price.text.replaceAll(',', '.')) ?? 0,
+      memberPrice: double.tryParse(memberPrice.text.replaceAll(',', '.')) ?? 0,
+      stock: type == 'standard' ? int.tryParse(stock.text) ?? 0 : 0,
+      threshold: type == 'standard' ? int.tryParse(threshold.text) ?? 0 : 0,
+      bbAuto: 0,
+      gasAuto: 0,
     );
   }
 }
@@ -1164,80 +1435,21 @@ Future<void> showAssociationConsumptionDialog(
     snack(context, 'Aucun article avec stock disponible');
     return;
   }
-  var articleId = availableArticles.first.id;
-  final quantity = TextEditingController(text: '1');
-  final note = TextEditingController();
-  final ok = await showDialog<bool>(
+  final result = await showDialog<_AssociationConsumptionResult>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) {
-        final article =
-            availableArticles.where((entry) => entry.id == articleId).first;
-        return AlertDialog(
-          title: const Text('Sortie stock association'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                "Cette sortie n'est ni une vente ni un paiement.",
-                style: TextStyle(color: AppColors.muted),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: articleId,
-                decoration: const InputDecoration(labelText: 'Article'),
-                items: [
-                  for (final entry in availableArticles)
-                    DropdownMenuItem(
-                      value: entry.id,
-                      child: Text('${entry.name} (stock ${entry.stock})'),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setState(() => articleId = value);
-                },
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: quantity,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                    labelText: 'Quantité',
-                    helperText: 'Disponible : ${article.stock}'),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: note,
-                decoration:
-                    const InputDecoration(labelText: 'Motif (optionnel)'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler')),
-            FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Valider la sortie')),
-          ],
-        );
-      },
-    ),
+    builder: (context) =>
+        _AssociationConsumptionDialog(availableArticles: availableArticles),
   );
-  final quantityValue = quantity.text.trim();
-  final noteValue = note.text;
-  quantity.dispose();
-  note.dispose();
-  if (ok != true) return;
+  if (result == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
   final article =
-      availableArticles.where((entry) => entry.id == articleId).first;
+      availableArticles.where((entry) => entry.id == result.articleId).first;
   try {
     await controller.consumeStockForAssociation(
       article,
-      int.tryParse(quantityValue) ?? 0,
-      note: noteValue,
+      result.quantity,
+      note: result.note,
     );
     if (context.mounted) snack(context, 'Sortie association enregistrée');
   } on StateError catch (error) {
@@ -1245,71 +1457,207 @@ Future<void> showAssociationConsumptionDialog(
   }
 }
 
+class _AssociationConsumptionResult {
+  const _AssociationConsumptionResult({
+    required this.articleId,
+    required this.quantity,
+    required this.note,
+  });
+
+  final String articleId;
+  final int quantity;
+  final String note;
+}
+
+class _AssociationConsumptionDialog extends StatefulWidget {
+  const _AssociationConsumptionDialog({required this.availableArticles});
+
+  final List<Article> availableArticles;
+
+  @override
+  State<_AssociationConsumptionDialog> createState() =>
+      _AssociationConsumptionDialogState();
+}
+
+class _AssociationConsumptionDialogState
+    extends State<_AssociationConsumptionDialog> {
+  late String articleId;
+  late final TextEditingController quantity;
+  late final TextEditingController note;
+
+  @override
+  void initState() {
+    super.initState();
+    articleId = widget.availableArticles.first.id;
+    quantity = TextEditingController(text: '1');
+    note = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    quantity.dispose();
+    note.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final article =
+        widget.availableArticles.where((entry) => entry.id == articleId).first;
+    return AlertDialog(
+      title: const Text('Sortie stock association'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            "Cette sortie n'est ni une vente ni un paiement.",
+            style: TextStyle(color: AppColors.muted),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            isExpanded: true,
+            initialValue: articleId,
+            decoration: const InputDecoration(labelText: 'Article'),
+            items: [
+              for (final entry in widget.availableArticles)
+                DropdownMenuItem(
+                  value: entry.id,
+                  child: Text('${entry.name} (stock ${entry.stock})',
+                      overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => articleId = value);
+            },
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: quantity,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+                labelText: 'Quantité',
+                helperText: 'Disponible : ${article.stock}'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: note,
+            decoration: const InputDecoration(labelText: 'Motif (optionnel)'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(
+                context,
+                _AssociationConsumptionResult(
+                  articleId: articleId,
+                  quantity: int.tryParse(quantity.text.trim()) ?? 0,
+                  note: note.text,
+                ),
+              );
+            },
+            child: const Text('Valider la sortie')),
+      ],
+    );
+  }
+}
+
 Future<void> showCashDialog(
     BuildContext context, AppController controller) async {
-  final given = TextEditingController();
-  double paid = 0;
-  await showDialog<void>(
+  final validate = await showDialog<bool>(
     context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) {
-        paid = double.tryParse(given.text.replaceAll(',', '.')) ?? 0;
-        final change = max(0.0, paid - controller.cartTotal);
-        return AlertDialog(
-          title: const Text('Rendu monnaie'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              MetricCard(
-                  label: 'À payer',
-                  value: money(controller.cartTotal),
-                  color: AppColors.accent),
-              const SizedBox(height: 10),
-              TextField(
-                controller: given,
-                autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'Montant donné'),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 10),
-              if (paid > 0 && paid < controller.cartTotal)
-                Text('Manque ${money(controller.cartTotal - paid)}',
-                    style: const TextStyle(color: AppColors.danger)),
-              if (paid >= controller.cartTotal)
-                Text(
-                    change < .01
-                        ? 'Compte exact'
-                        : 'Rendu: ${money(change)}\n${changeBreakdown(change).join(' · ')}',
-                    style: const TextStyle(
-                        color: AppColors.accent, fontWeight: FontWeight.w900)),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Annuler')),
-            FilledButton(
-              onPressed: paid >= controller.cartTotal && controller.canCheckout
-                  ? () async {
-                      try {
-                        await controller.checkout('ESP');
-                        if (context.mounted) Navigator.pop(context);
-                      } on StateError catch (error) {
-                        if (context.mounted) snack(context, '$error');
-                      }
-                    }
-                  : null,
-              child: const Text('Valider ESP'),
-            ),
-          ],
-        );
-      },
-    ),
+    builder: (context) => _CashDialog(controller: controller),
   );
-  given.dispose();
+  if (validate != true) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  try {
+    await controller.checkout('ESP');
+  } on StateError catch (error) {
+    if (context.mounted) snack(context, '$error');
+  }
+}
+
+class _CashDialog extends StatefulWidget {
+  const _CashDialog({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_CashDialog> createState() => _CashDialogState();
+}
+
+class _CashDialogState extends State<_CashDialog> {
+  final given = TextEditingController();
+
+  @override
+  void dispose() {
+    given.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paid = double.tryParse(given.text.replaceAll(',', '.')) ?? 0;
+    final total = widget.controller.cartTotal;
+    final change = max(0.0, paid - total);
+    return AlertDialog(
+      title: const Text('Rendu monnaie'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          MetricCard(
+              label: 'À payer', value: money(total), color: AppColors.accent),
+          const SizedBox(height: 10),
+          TextField(
+            controller: given,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'Montant donné'),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 10),
+          if (paid > 0 && paid < total)
+            Text('Manque ${money(total - paid)}',
+                style: const TextStyle(color: AppColors.danger)),
+          if (paid >= total)
+            Text(
+                change < .01
+                    ? 'Compte exact'
+                    : 'Rendu: ${money(change)}\n${changeBreakdown(change).join(' · ')}',
+                style: const TextStyle(
+                    color: AppColors.accent, fontWeight: FontWeight.w900)),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context, false);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+          onPressed: paid >= total && widget.controller.canCheckout
+              ? () {
+                  FocusScope.of(context).unfocus();
+                  Navigator.pop(context, true);
+                }
+              : null,
+          child: const Text('Valider ESP'),
+        ),
+      ],
+    );
+  }
 }
 
 List<String> changeBreakdown(double change) {

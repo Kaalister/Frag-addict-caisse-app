@@ -1,4 +1,5 @@
-part of '../../main.dart';
+import '../domain/models.dart';
+import '../utils/iterable_extensions.dart';
 
 class StockService {
   List<StockShortage> shortages(Map<Article, int> requirements) {

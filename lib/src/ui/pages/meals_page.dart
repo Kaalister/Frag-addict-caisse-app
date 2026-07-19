@@ -1,4 +1,11 @@
-part of '../../../main.dart';
+import 'package:flutter/material.dart';
+
+import '../../controllers/app_controller.dart';
+import '../../domain/models.dart';
+import '../../platform/backup_and_links.dart';
+import '../../utils/iterable_extensions.dart';
+import '../theme.dart';
+import '../widgets/common_widgets.dart';
 
 class MealsPage extends StatefulWidget {
   const MealsPage({required this.controller, super.key});
@@ -328,25 +335,128 @@ const _mealIndicationOptions = <String>[
 Future<void> showMealDialog(BuildContext context, AppController controller,
     {MealOrder? meal}) async {
   if (controller.players.isEmpty || controller.mealArticles.isEmpty) return;
-  var playerId = meal?.playerId ?? controller.players.first.id;
-  var source = meal?.source ?? 'helloasso';
-  var payment = meal?.payment ?? 'ESP';
-  var status = meal?.status == 'planned' ? 'planned' : 'prepared';
-  var formula = meal?.formula ?? 'Standard';
-  var mealArticleId = meal?.mealArticleId ?? controller.mealArticles.first.id;
-  var drinkArticleId =
-      meal?.drinkArticleId ?? (controller.drinkArticles.firstOrNull?.id ?? '');
-  var snackArticleId =
-      meal?.snackArticleId ?? (controller.snackArticles.firstOrNull?.id ?? '');
-  final options = <String>{...?meal?.options};
-  final note = TextEditingController(text: meal?.note ?? '');
+  final result = await showDialog<_MealDialogResult>(
+    context: context,
+    builder: (context) => _MealDialog(controller: controller, meal: meal),
+  );
+  if (result == null) return;
+  await Future<void>.delayed(kThemeAnimationDuration);
+  if (!context.mounted) return;
+  try {
+    if (meal == null) {
+      final player = controller.players
+          .where((entry) => entry.id == result.playerId)
+          .first;
+      await controller.createMeal(
+        player: player,
+        source: result.source,
+        status: result.status,
+        payment: result.source == 'onsite' ? result.payment : '',
+        mealArticleId: result.mealArticleId,
+        drinkArticleId: result.drinkArticleId,
+        snackArticleId: result.snackArticleId,
+        formula: result.formula,
+        options: result.options,
+        note: result.note,
+      );
+    } else {
+      await controller.updateMeal(
+        meal,
+        meal.copyWith(
+          mealArticleId: result.mealArticleId,
+          drinkArticleId: result.drinkArticleId,
+          snackArticleId: result.snackArticleId,
+          formula: result.formula,
+          options: result.options,
+          note: result.note.trim(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+    }
+  } catch (error) {
+    if (context.mounted) snack(context, 'Repas impossible : $error');
+  }
+}
+
+class _MealDialogResult {
+  const _MealDialogResult({
+    required this.playerId,
+    required this.source,
+    required this.payment,
+    required this.status,
+    required this.formula,
+    required this.mealArticleId,
+    required this.drinkArticleId,
+    required this.snackArticleId,
+    required this.options,
+    required this.note,
+  });
+
+  final String playerId;
+  final String source;
+  final String payment;
+  final String status;
+  final String formula;
+  final String mealArticleId;
+  final String drinkArticleId;
+  final String snackArticleId;
+  final List<String> options;
+  final String note;
+}
+
+class _MealDialog extends StatefulWidget {
+  const _MealDialog({required this.controller, required this.meal});
+
+  final AppController controller;
+  final MealOrder? meal;
+
+  @override
+  State<_MealDialog> createState() => _MealDialogState();
+}
+
+class _MealDialogState extends State<_MealDialog> {
+  late String playerId;
+  late String source;
+  late String payment;
+  late String status;
+  late String formula;
+  late String mealArticleId;
+  late String drinkArticleId;
+  late String snackArticleId;
+  late final Set<String> options;
+  late final TextEditingController note;
+
+  AppController get controller => widget.controller;
+  MealOrder? get meal => widget.meal;
+
+  @override
+  void initState() {
+    super.initState();
+    final meal = widget.meal;
+    playerId = meal?.playerId ?? controller.players.first.id;
+    source = meal?.source ?? 'helloasso';
+    payment = meal?.payment ?? 'ESP';
+    status = meal?.status == 'planned' ? 'planned' : 'prepared';
+    formula = meal?.formula ?? 'Standard';
+    mealArticleId = meal?.mealArticleId ?? controller.mealArticles.first.id;
+    drinkArticleId = meal?.drinkArticleId ??
+        (controller.drinkArticles.firstOrNull?.id ?? '');
+    snackArticleId = meal?.snackArticleId ??
+        (controller.snackArticles.firstOrNull?.id ?? '');
+    options = <String>{...?meal?.options};
+    note = TextEditingController(text: meal?.note ?? '');
+  }
+
+  @override
+  void dispose() {
+    note.dispose();
+    super.dispose();
+  }
 
   void applyFormula(String value) {
     formula = value;
     if (value == 'Sans snack') snackArticleId = '';
-    if (value == 'Boisson seule') {
-      snackArticleId = '';
-    }
+    if (value == 'Boisson seule') snackArticleId = '';
     if (value == 'Standard' && snackArticleId.isEmpty) {
       snackArticleId = controller.snackArticles.firstOrNull?.id ?? '';
     }
@@ -358,6 +468,7 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
         controller.articles.where((entry) => entry.id == articleId).firstOrNull;
     if (article == null) return '';
     var after = article.stock;
+    final meal = widget.meal;
     if (meal?.consumesStock ?? false) {
       after += meal!.stockItems[articleId] ?? 0;
     }
@@ -375,266 +486,256 @@ Future<void> showMealDialog(BuildContext context, AppController controller,
     return 'Stock ${article.stock} → $after$alert';
   }
 
-  final ok = await showDialog<bool>(
-    context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: Text(meal == null ? 'Nouveau repas' : 'Modifier le repas'),
-        content: SizedBox(
-          width: 560,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (meal == null)
-                  DropdownButtonFormField<String>(
-                    initialValue: playerId,
-                    decoration: const InputDecoration(labelText: 'Participant'),
-                    items: [
-                      for (final player in controller.players)
-                        DropdownMenuItem(
-                            value: player.id, child: Text(player.name)),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => playerId = value ?? playerId),
-                  )
-                else
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(meal.playerName),
-                    subtitle: Text(meal.source == 'onsite'
-                        ? 'Repas acheté sur place'
-                        : 'Repas prépayé HelloAsso'),
-                  ),
-                if (meal == null) ...[
+  @override
+  Widget build(BuildContext context) {
+    final meal = widget.meal;
+    return AlertDialog(
+      title: Text(meal == null ? 'Nouveau repas' : 'Modifier le repas'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (meal == null)
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: playerId,
+                  decoration: const InputDecoration(labelText: 'Participant'),
+                  items: [
+                    for (final player in controller.players)
+                      DropdownMenuItem(
+                          value: player.id,
+                          child: Text(player.name,
+                              overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => playerId = value ?? playerId),
+                )
+              else
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(meal.playerName),
+                  subtitle: Text(meal.source == 'onsite'
+                      ? 'Repas acheté sur place'
+                      : 'Repas prépayé HelloAsso'),
+                ),
+              if (meal == null) ...[
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: source,
+                  decoration: const InputDecoration(labelText: 'Origine'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'helloasso', child: Text('Prépayé HelloAsso')),
+                    DropdownMenuItem(
+                        value: 'onsite', child: Text('Achat sur place')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => source = value ?? source),
+                ),
+                if (source == 'onsite') ...[
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    initialValue: source,
-                    decoration: const InputDecoration(labelText: 'Origine'),
+                    initialValue: payment,
+                    decoration: const InputDecoration(labelText: 'Paiement'),
                     items: const [
-                      DropdownMenuItem(
-                          value: 'helloasso', child: Text('Prépayé HelloAsso')),
-                      DropdownMenuItem(
-                          value: 'onsite', child: Text('Achat sur place')),
+                      DropdownMenuItem(value: 'ESP', child: Text('Espèces')),
+                      DropdownMenuItem(value: 'PayPal', child: Text('PayPal')),
+                      DropdownMenuItem(value: 'SumUp', child: Text('SumUp')),
                     ],
                     onChanged: (value) =>
-                        setState(() => source = value ?? source),
-                  ),
-                  if (source == 'onsite') ...[
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<String>(
-                      initialValue: payment,
-                      decoration: const InputDecoration(labelText: 'Paiement'),
-                      items: const [
-                        DropdownMenuItem(value: 'ESP', child: Text('Espèces')),
-                        DropdownMenuItem(
-                            value: 'PayPal', child: Text('PayPal')),
-                        DropdownMenuItem(value: 'SumUp', child: Text('SumUp')),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => payment = value ?? payment),
-                    ),
-                  ],
-                ],
-                const SizedBox(height: 12),
-                const Text('Formule rapide',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 7,
-                  children: [
-                    for (final value in [
-                      'Standard',
-                      'Sans snack',
-                      'Boisson seule'
-                    ])
-                      ChoiceChip(
-                        label: Text(value),
-                        selected: formula == value,
-                        onSelected: (_) => setState(() => applyFormula(value)),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('meal-$mealArticleId'),
-                  initialValue: mealArticleId,
-                  decoration: const InputDecoration(labelText: 'Repas'),
-                  items: [
-                    for (final article in controller.mealArticles)
-                      DropdownMenuItem(
-                          value: article.id,
-                          child: Text('${article.name} (${article.stock})')),
-                  ],
-                  onChanged: (value) =>
-                      setState(() => mealArticleId = value ?? mealArticleId),
-                ),
-                Text(stockPreview(mealArticleId),
-                    style: const TextStyle(color: AppColors.muted)),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('drink-$drinkArticleId'),
-                  initialValue: drinkArticleId.isEmpty ? null : drinkArticleId,
-                  decoration:
-                      const InputDecoration(labelText: 'Boisson incluse'),
-                  items: [
-                    const DropdownMenuItem(
-                        value: '', child: Text('Aucune boisson')),
-                    for (final article in controller.drinkArticles)
-                      DropdownMenuItem(
-                          value: article.id,
-                          child: Text('${article.name} (${article.stock})')),
-                  ],
-                  onChanged: (value) =>
-                      setState(() => drinkArticleId = value ?? ''),
-                ),
-                if (drinkArticleId.isNotEmpty)
-                  Text(stockPreview(drinkArticleId),
-                      style: const TextStyle(color: AppColors.muted)),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  key: ValueKey('snack-$snackArticleId'),
-                  initialValue: snackArticleId.isEmpty ? null : snackArticleId,
-                  decoration: const InputDecoration(labelText: 'Snack inclus'),
-                  items: [
-                    const DropdownMenuItem(
-                        value: '', child: Text('Aucun snack')),
-                    for (final article in controller.snackArticles)
-                      DropdownMenuItem(
-                          value: article.id,
-                          child: Text('${article.name} (${article.stock})')),
-                  ],
-                  onChanged: (value) =>
-                      setState(() => snackArticleId = value ?? ''),
-                ),
-                if (snackArticleId.isNotEmpty)
-                  Text(stockPreview(snackArticleId),
-                      style: const TextStyle(color: AppColors.muted)),
-                const SizedBox(height: 12),
-                const Text('Sauces',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    for (final option in _mealSauceOptions)
-                      FilterChip(
-                        label: Text(option),
-                        selected: options.contains(option),
-                        onSelected: (selected) => setState(() {
-                          if (selected) {
-                            if (option == 'Sans sauce') {
-                              options.removeAll(_mealSauceOptions);
-                            } else {
-                              options.remove('Sans sauce');
-                            }
-                            options.add(option);
-                          } else {
-                            options.remove(option);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text('Indications rapides',
-                    style: TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  children: [
-                    for (final indication in _mealIndicationOptions)
-                      FilterChip(
-                        label: Text(indication),
-                        selected: options.contains(indication),
-                        onSelected: (selected) => setState(() {
-                          if (selected) {
-                            options.add(indication);
-                          } else {
-                            options.remove(indication);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: note,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                      labelText: 'Note rapide',
-                      hintText: 'Ex : allergie arachides, à remettre avec Léa'),
-                ),
-                if (meal == null) ...[
-                  const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                          value: 'planned',
-                          icon: Icon(Icons.event_note),
-                          label: Text('À préparer')),
-                      ButtonSegment(
-                          value: 'prepared',
-                          icon: Icon(Icons.lunch_dining),
-                          label: Text('Préparé')),
-                    ],
-                    selected: {status},
-                    onSelectionChanged: (selected) =>
-                        setState(() => status = selected.first),
+                        setState(() => payment = value ?? payment),
                   ),
                 ],
               ],
-            ),
+              const SizedBox(height: 12),
+              const Text('Formule rapide',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 7,
+                children: [
+                  for (final value in [
+                    'Standard',
+                    'Sans snack',
+                    'Boisson seule'
+                  ])
+                    ChoiceChip(
+                      label: Text(value),
+                      selected: formula == value,
+                      onSelected: (_) => setState(() => applyFormula(value)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                key: ValueKey('meal-$mealArticleId'),
+                initialValue: mealArticleId,
+                decoration: const InputDecoration(labelText: 'Repas'),
+                items: [
+                  for (final article in controller.mealArticles)
+                    DropdownMenuItem(
+                        value: article.id,
+                        child: Text('${article.name} (${article.stock})',
+                            overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (value) =>
+                    setState(() => mealArticleId = value ?? mealArticleId),
+              ),
+              Text(stockPreview(mealArticleId),
+                  style: const TextStyle(color: AppColors.muted)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                key: ValueKey('drink-$drinkArticleId'),
+                initialValue: drinkArticleId.isEmpty ? null : drinkArticleId,
+                decoration: const InputDecoration(labelText: 'Boisson incluse'),
+                items: [
+                  const DropdownMenuItem(
+                      value: '', child: Text('Aucune boisson')),
+                  for (final article in controller.drinkArticles)
+                    DropdownMenuItem(
+                        value: article.id,
+                        child: Text('${article.name} (${article.stock})',
+                            overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (value) =>
+                    setState(() => drinkArticleId = value ?? ''),
+              ),
+              if (drinkArticleId.isNotEmpty)
+                Text(stockPreview(drinkArticleId),
+                    style: const TextStyle(color: AppColors.muted)),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                isExpanded: true,
+                key: ValueKey('snack-$snackArticleId'),
+                initialValue: snackArticleId.isEmpty ? null : snackArticleId,
+                decoration: const InputDecoration(labelText: 'Snack inclus'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('Aucun snack')),
+                  for (final article in controller.snackArticles)
+                    DropdownMenuItem(
+                        value: article.id,
+                        child: Text('${article.name} (${article.stock})',
+                            overflow: TextOverflow.ellipsis)),
+                ],
+                onChanged: (value) =>
+                    setState(() => snackArticleId = value ?? ''),
+              ),
+              if (snackArticleId.isNotEmpty)
+                Text(stockPreview(snackArticleId),
+                    style: const TextStyle(color: AppColors.muted)),
+              const SizedBox(height: 12),
+              const Text('Sauces',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  for (final option in _mealSauceOptions)
+                    FilterChip(
+                      label: Text(option),
+                      selected: options.contains(option),
+                      onSelected: (selected) => setState(() {
+                        if (selected) {
+                          if (option == 'Sans sauce') {
+                            options.removeAll(_mealSauceOptions);
+                          } else {
+                            options.remove('Sans sauce');
+                          }
+                          options.add(option);
+                        } else {
+                          options.remove(option);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text('Indications rapides',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 7,
+                runSpacing: 7,
+                children: [
+                  for (final indication in _mealIndicationOptions)
+                    FilterChip(
+                      label: Text(indication),
+                      selected: options.contains(indication),
+                      onSelected: (selected) => setState(() {
+                        if (selected) {
+                          options.add(indication);
+                        } else {
+                          options.remove(indication);
+                        }
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: note,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: 'Note rapide',
+                    hintText: 'Ex : allergie arachides, à remettre avec Léa'),
+              ),
+              if (meal == null) ...[
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                        value: 'planned',
+                        icon: Icon(Icons.event_note),
+                        label: Text('À préparer')),
+                    ButtonSegment(
+                        value: 'prepared',
+                        icon: Icon(Icons.lunch_dining),
+                        label: Text('Préparé')),
+                  ],
+                  selected: {status},
+                  onSelectionChanged: (selected) =>
+                      setState(() => status = selected.first),
+                ),
+              ],
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Annuler')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Enregistrer')),
-        ],
       ),
-    ),
-  );
-  final noteValue = note.text;
-  note.dispose();
-  if (ok != true || !context.mounted) return;
-  try {
-    if (meal == null) {
-      final player =
-          controller.players.where((entry) => entry.id == playerId).first;
-      await controller.createMeal(
-        player: player,
-        source: source,
-        status: status,
-        payment: source == 'onsite' ? payment : '',
-        mealArticleId: mealArticleId,
-        drinkArticleId: drinkArticleId,
-        snackArticleId: snackArticleId,
-        formula: formula,
-        options: options.toList(),
-        note: noteValue,
-      );
-    } else {
-      await controller.updateMeal(
-        meal,
-        meal.copyWith(
-          mealArticleId: mealArticleId,
-          drinkArticleId: drinkArticleId,
-          snackArticleId: snackArticleId,
-          formula: formula,
-          options: options.toList(),
-          note: noteValue.trim(),
-          updatedAt: DateTime.now(),
-        ),
-      );
-    }
-  } catch (error) {
-    if (context.mounted) snack(context, 'Repas impossible : $error');
+      actions: [
+        TextButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context);
+            },
+            child: const Text('Annuler')),
+        FilledButton(
+            onPressed: () {
+              FocusScope.of(context).unfocus();
+              Navigator.pop(context, _result());
+            },
+            child: const Text('Enregistrer')),
+      ],
+    );
+  }
+
+  _MealDialogResult _result() {
+    return _MealDialogResult(
+      playerId: playerId,
+      source: source,
+      payment: payment,
+      status: status,
+      formula: formula,
+      mealArticleId: mealArticleId,
+      drinkArticleId: drinkArticleId,
+      snackArticleId: snackArticleId,
+      options: options.toList(),
+      note: note.text,
+    );
   }
 }
