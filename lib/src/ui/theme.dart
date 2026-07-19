@@ -78,7 +78,7 @@ ThemeData caisseTheme(Color primaryColor) {
           return TextStyle(
               color: primaryColor, fontWeight: FontWeight.w800, fontSize: 12);
         }
-        return const TextStyle(color: AppColors.muted, fontSize: 12);
+        return TextStyle(color: primaryColor, fontSize: 12);
       }),
     ),
     navigationRailTheme: NavigationRailThemeData(
@@ -87,7 +87,7 @@ ThemeData caisseTheme(Color primaryColor) {
       unselectedIconTheme: const IconThemeData(color: AppColors.muted),
       selectedLabelTextStyle:
           TextStyle(color: primaryColor, fontWeight: FontWeight.w800),
-      unselectedLabelTextStyle: const TextStyle(color: AppColors.muted),
+      unselectedLabelTextStyle: TextStyle(color: primaryColor),
     ),
   );
 }

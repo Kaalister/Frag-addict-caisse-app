@@ -119,7 +119,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /organizations/default/users/{userId}/snapshots/{snapshotId} {
       allow read, write: if request.auth != null
-                         && request.auth.uid == userId;
+                         && request.auth.uid == userId
+                         && snapshotId in ['caisse-main', 'caisse-dev'];
     }
   }
 }
@@ -129,8 +130,11 @@ Cliquer ensuite sur `Publier`. Sans cette action, les nouvelles regles ne sont
 pas utilisees par Firebase. Attendre une minute avant le premier essai si les
 regles viennent d'etre remplacees.
 
+Le mot `default` est une valeur litterale utilisee par Tilly. Il ne faut pas le
+remplacer par le nom du projet Firebase ou de l'association.
+
 Ces regles signifient qu'un compte Firebase ne peut lire et ecrire que ses
-propres donnees.
+propres donnees et uniquement dans les snapshots `caisse-main` et `caisse-dev`.
 
 Documentation officielle :
 
@@ -228,6 +232,11 @@ organizations/default/users/{uid}/snapshots/caisse-main
 
 Une version de developpement utilise `caisse-dev` au lieu de `caisse-main`.
 
+La synchronisation est manuelle et porte sur un snapshot complet. Tilly envoie
+la version locale lorsqu'elle est la plus recente, ou propose de remplacer les
+donnees locales lorsqu'un autre appareil a envoye une version plus recente.
+Les modifications ne sont pas fusionnees ligne par ligne.
+
 ## 11. Utiliser un autre appareil
 
 1. Installer l'application sur le nouvel appareil.
@@ -241,6 +250,9 @@ Une version de developpement utilise `caisse-dev` au lieu de `caisse-main`.
 Avant une restauration depuis Firebase, faire une sauvegarde JSON si
 l'application le propose.
 
+Ne pas travailler sur deux appareils en meme temps. Synchroniser avant de
+changer d'appareil, puis synchroniser de nouveau apres les modifications.
+
 ### 11.1 Erreurs courantes
 
 `Configuration non reconnue` : recopier le bloc `firebaseConfig` complet ou le
@@ -249,8 +261,10 @@ contenu complet de `google-services.json`.
 `Email ou mot de passe incorrect` : verifier que Email/Password est active et
 que l'utilisateur existe dans `Authentication > Users`.
 
-`Acces Firestore refuse` : verifier que les regles ont ete collees, que le
-chemin contient `organizations/default/users`, puis cliquer sur `Publier`.
+`Acces Firestore refuse` : verifier que les regles ont ete collees dans le
+projet Firebase configure dans Tilly, que le chemin contient exactement
+`organizations/default/users` sans remplacer `default`, puis cliquer sur
+`Publier`.
 
 `Aucune donnee` : verifier que le premier appareil a deja synchronise et que
 les deux appareils utilisent le meme compte Firebase.

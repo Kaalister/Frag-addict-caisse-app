@@ -31,6 +31,24 @@ class _MemoryAppController extends AppController {
   }
 
   @override
+  Future<void> load() async {
+    loading = false;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> markTutorialWelcomeSeen() async {
+    tutorialWelcomeSeen = true;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> markTutorialPageSeen(String pageId) async {
+    tutorialPagesSeen = {...tutorialPagesSeen, pageId};
+    notifyListeners();
+  }
+
+  @override
   Future<void> addPlayer({
     required String firstName,
     required String lastName,
@@ -671,6 +689,26 @@ void main() {
     expect(restored.primaryColor.toARGB32(), 0xFFFF6B35);
   });
 
+  test('Tiko tutorial progress persists locally', () async {
+    final tempDirectory = await Directory.systemTemp.createTemp('tilly-test-');
+    final databasePath = path.join(tempDirectory.path, 'tilly.db');
+    final writer = LocalDatabase(databasePathOverride: databasePath);
+
+    await writer.saveTutorialWelcomeSeen();
+    await writer.saveTutorialPagesSeen({AppTabIds.sales, AppTabIds.players});
+    await writer.close();
+
+    final reader = LocalDatabase(databasePathOverride: databasePath);
+    addTearDown(() async {
+      await reader.close();
+      await tempDirectory.delete(recursive: true);
+    });
+
+    expect(await reader.loadTutorialWelcomeSeen(), isTrue);
+    expect(await reader.loadTutorialPagesSeen(),
+        {AppTabIds.sales, AppTabIds.players});
+  });
+
   test('Firebase settings round-trip and build runtime options', () {
     const settings = FirebaseSettings(
       apiKey: 'api-key',
@@ -848,6 +886,182 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.primaryColor.toARGB32(), AppColors.accent2.toARGB32());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('configuration service help is presented by Tiko',
+      (tester) async {
+    final controller = _MemoryAppController();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(
+          body: ConfigPage(
+            controller: controller,
+            updateResult: null,
+            checkingUpdate: false,
+            onCheckUpdate: () {},
+            onOpenUpdate: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Firebase'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('À quoi ça sert ?'), findsOneWidget);
+    await tester.tap(find.byTooltip('Tiko explique Firebase'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('synchronisation est entièrement manuelle'),
+        findsOneWidget);
+
+    for (var step = 0; step < 4; step++) {
+      await tester.tap(find.text('Suivant'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.textContaining('organizations/default/users'), findsOneWidget);
+
+    await tester.tap(find.text('Suivant'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('deux appareils en même temps'), findsOneWidget);
+    expect(find.text('Ouvrir le tutoriel'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Fermer le tuto'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('HelloAsso'));
+    await tester.pumpAndSettle();
+    expect(find.text('À quoi ça sert ?'), findsOneWidget);
+    await tester.tap(find.byTooltip('Tiko explique HelloAsso'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('HelloAsso est facultatif'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Tiko first launch tour ends on articles page', (tester) async {
+    final controller = _MemoryAppController();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Future<void> finishCurrentTutorial(String finalLabel) async {
+      var guard = 0;
+      while (find.text('Suivant').evaluate().isNotEmpty && guard < 8) {
+        await tester.tap(find.text('Suivant'));
+        await tester.pumpAndSettle();
+        guard += 1;
+      }
+      await tester.tap(find.text(finalLabel));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: RootShell(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('merci d\'avoir choisi'), findsOneWidget);
+
+    await tester.tap(find.text('Suivant'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Moi, c\'est Tiko'), findsOneWidget);
+
+    await tester.tap(find.text('Suivant'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('en haut à droite'), findsOneWidget);
+
+    await tester.tap(find.text('Suivant'));
+    await tester.pumpAndSettle();
+    expect(
+        find.textContaining('tour rapide de l\'application'), findsOneWidget);
+
+    await finishCurrentTutorial('C\'est parti');
+
+    expect(controller.tutorialWelcomeSeen, isTrue);
+    expect(find.textContaining('La page Vente est le cœur'), findsOneWidget);
+
+    final visitedTabs = <int>{};
+    var guard = 0;
+    while (
+        find.byTooltip('Fermer le tuto').evaluate().isNotEmpty && guard < 12) {
+      visitedTabs.add(controller.tab);
+      final finalLabel =
+          controller.tab == 7 ? 'Créer mon premier article' : 'Continuer';
+      await finishCurrentTutorial(finalLabel);
+      guard += 1;
+    }
+
+    expect(visitedTabs, containsAll(<int>{0, 1, 2, 3, 4, 5, 6, 7, 8}));
+    expect(controller.tab, 7);
+    expect(find.text('ARTICLES & PRIX'), findsWidgets);
+    expect(controller.tutorialPagesSeen, isEmpty);
+
+    await tester.tap(find.byTooltip('Revoir le tuto de Tiko'));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.textContaining('Commence par cet écran avant d\'ouvrir la caisse'),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Tiko page help appears once and remains manually available',
+      (tester) async {
+    final controller = _MemoryAppController()..tutorialWelcomeSeen = true;
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Finder railLabel(String label) => find.descendant(
+          of: find.byType(NavigationRail),
+          matching: find.text(label),
+        );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: RootShell(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Pour faire une vente'), findsOneWidget);
+    expect(controller.tutorialPagesSeen, contains(AppTabIds.sales));
+
+    await tester.tap(find.byTooltip('Fermer le tuto'));
+    await tester.pumpAndSettle();
+    await tester.tap(railLabel('Participants'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Avant de vendre, ajoute ici les joueurs'),
+        findsOneWidget);
+    expect(controller.tutorialPagesSeen, contains(AppTabIds.players));
+
+    await tester.tap(find.byTooltip('Fermer le tuto'));
+    await tester.pumpAndSettle();
+    await tester.tap(railLabel('Vente'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Fermer le tuto'), findsNothing);
+
+    await tester.tap(find.byTooltip('Revoir le tuto de Tiko'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Pour faire une vente'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

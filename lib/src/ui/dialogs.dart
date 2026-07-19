@@ -13,6 +13,7 @@ import '../services/firebase_sync_service.dart';
 import '../utils/iterable_extensions.dart';
 import 'theme.dart';
 import 'widgets/common_widgets.dart';
+import 'widgets/tiko_tutorial.dart';
 
 const helloAssoConnectionFailedMessage =
     'Connexion HelloAsso impossible. Vérifie la configuration et réessaie.';
@@ -446,62 +447,9 @@ Future<void> showFirebaseSetupDialog(
 Future<void> showFirebaseHelpDialog(BuildContext context) async {
   final openGuide = await showDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.info_outline, color: AppColors.accent2),
-          SizedBox(width: 10),
-          Expanded(child: Text('À quoi sert Firebase ?')),
-        ],
-      ),
-      content: SizedBox(
-        width: min(MediaQuery.sizeOf(context).width - 48, 540),
-        child: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Firebase est optionnel. Sans connexion, toutes les fonctions de caisse restent disponibles sur cet appareil.',
-              ),
-              SizedBox(height: 14),
-              _HelpDialogItem(
-                icon: Icons.sync,
-                text:
-                    'Synchroniser les données de caisse entre plusieurs appareils.',
-              ),
-              SizedBox(height: 10),
-              _HelpDialogItem(
-                icon: Icons.restore,
-                text:
-                    'Récupérer les données après une réinstallation ou sur un nouvel appareil.',
-              ),
-              SizedBox(height: 10),
-              _HelpDialogItem(
-                icon: Icons.lock_outline,
-                text:
-                    'Protéger chaque espace avec un compte email et mot de passe.',
-              ),
-              SizedBox(height: 14),
-              Text(
-                'Le tutoriel explique pas à pas comment créer le projet Firebase, activer Firestore et récupérer les codes Android ou Windows à coller dans l’application.',
-                style: TextStyle(color: AppColors.muted, height: 1.4),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Fermer'),
-        ),
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(context, true),
-          icon: const Icon(Icons.open_in_new),
-          label: const Text('Ouvrir le tutoriel'),
-        ),
-      ],
+    builder: (context) => TikoTutorialDialog(
+      content: tikoFirebaseHelpTutorial(),
+      primaryActionLabel: 'Ouvrir le tutoriel',
     ),
   );
 
@@ -519,64 +467,9 @@ Future<void> showHelloAssoHelpDialog(BuildContext context,
     {bool mealsEnabled = true}) async {
   final openGuide = await showDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.info_outline, color: AppColors.accent2),
-          SizedBox(width: 10),
-          Expanded(child: Text('À quoi sert HelloAsso ?')),
-        ],
-      ),
-      content: SizedBox(
-        width: min(MediaQuery.sizeOf(context).width - 48, 540),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                mealsEnabled
-                    ? 'HelloAsso est optionnel. Sans connexion, les participants et les repas peuvent toujours être saisis manuellement.'
-                    : 'HelloAsso est optionnel. Sans connexion, les participants peuvent toujours être saisis manuellement.',
-              ),
-              const SizedBox(height: 14),
-              _HelpDialogItem(
-                icon: Icons.event_available,
-                text: 'Retrouver les événements publiés par l’association.',
-              ),
-              const SizedBox(height: 10),
-              const _HelpDialogItem(
-                icon: Icons.group_add_outlined,
-                text: 'Importer les participants ayant réglé leur inscription.',
-              ),
-              if (mealsEnabled) ...[
-                const SizedBox(height: 10),
-                const _HelpDialogItem(
-                  icon: Icons.restaurant_outlined,
-                  text:
-                      'Récupérer les informations utiles à la préparation des repas.',
-                ),
-              ],
-              const SizedBox(height: 14),
-              const Text(
-                'Le tutoriel explique où trouver le nom public de l’association, le Client ID et le Client secret, puis comment les renseigner dans l’application.',
-                style: TextStyle(color: AppColors.muted, height: 1.4),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Fermer'),
-        ),
-        FilledButton.icon(
-          onPressed: () => Navigator.pop(context, true),
-          icon: const Icon(Icons.open_in_new),
-          label: const Text('Ouvrir le tutoriel'),
-        ),
-      ],
+    builder: (context) => TikoTutorialDialog(
+      content: tikoHelloAssoHelpTutorial(mealsEnabled: mealsEnabled),
+      primaryActionLabel: 'Ouvrir le tutoriel',
     ),
   );
 
@@ -587,25 +480,6 @@ Future<void> showHelloAssoHelpDialog(BuildContext context,
     if (context.mounted) {
       snack(context, 'Impossible d’ouvrir le tutoriel : $error');
     }
-  }
-}
-
-class _HelpDialogItem extends StatelessWidget {
-  const _HelpDialogItem({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 20, color: AppColors.accent),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text)),
-      ],
-    );
   }
 }
 

@@ -6,6 +6,7 @@ import '../data/local_database.dart';
 import '../data/persistable_app_state.dart';
 import '../domain/models.dart';
 import '../services/firebase_bootstrap.dart';
+import '../services/firebase_monitoring_service.dart';
 import '../services/firebase_sync_service.dart';
 import '../services/hello_asso_import_service.dart';
 import '../services/meal_service.dart';
@@ -65,6 +66,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   Map<String, int> cashStart = {};
   @override
   Map<String, int> cashEnd = {};
+  bool tutorialWelcomeSeen = false;
+  Set<String> tutorialPagesSeen = {};
 
   String get session => activeSession?.name ?? '';
   String get associationName => appSettings.associationName;
@@ -116,6 +119,12 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     try {
       await _database.setUserScope(FirebaseBootstrap.currentUser?.uid);
       await _loadLocalState();
+      FirebaseMonitoringService.setContextKey('current_tab', _tabId(tab));
+      FirebaseMonitoringService.logAction('app_loaded', context: {
+        'tab': _tabId(tab),
+        'firebase_sync': _syncService.isAvailable ? 'connected' : 'offline',
+        'meals': mealsEnabled ? 'enabled' : 'disabled',
+      });
     } catch (_) {
       articles = defaultArticles();
       articleCategories = defaultArticleCategories();
@@ -141,6 +150,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     }
     final storedHelloAssoSettings = await _database.loadHelloAssoSettings();
     appSettings = await _database.loadAppSettings();
+    tutorialWelcomeSeen = await _database.loadTutorialWelcomeSeen();
+    tutorialPagesSeen = await _database.loadTutorialPagesSeen();
     helloAssoSettings =
         await _secureSettings.loadHelloAssoSettings(storedHelloAssoSettings);
     if (storedHelloAssoSettings.clientSecret.trim().isNotEmpty) {
@@ -180,13 +191,33 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     }
   }
 
+  Future<void> markTutorialWelcomeSeen() async {
+    if (tutorialWelcomeSeen) return;
+    tutorialWelcomeSeen = true;
+    notifyListeners();
+    await _database.saveTutorialWelcomeSeen();
+  }
+
+  Future<void> markTutorialPageSeen(String pageId) async {
+    if (tutorialPagesSeen.contains(pageId)) return;
+    tutorialPagesSeen = {...tutorialPagesSeen, pageId};
+    notifyListeners();
+    await _database.saveTutorialPagesSeen(tutorialPagesSeen);
+  }
+
   Future<FirebaseSyncResult> syncNow({
     bool reloadAfterPull = true,
     bool allowRemotePull = false,
   }) async {
+    FirebaseMonitoringService.logAction('firebase_sync_requested', context: {
+      'tab': _tabId(tab),
+      'allow_pull': allowRemotePull,
+    });
     if (!_syncService.isAvailable) {
       final result = FirebaseSyncResult(FirebaseSyncAction.disabled,
           FirebaseBootstrap.error ?? 'Connexion Firebase requise');
+      FirebaseMonitoringService.logAction('firebase_sync_unavailable',
+          context: {'reason': result.action.name});
       _applySyncResult(result);
       notifyListeners();
       return result;
@@ -197,6 +228,10 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     try {
       final result =
           await _syncService.synchronize(_database, allowPull: allowRemotePull);
+      FirebaseMonitoringService.logAction('firebase_sync_finished', context: {
+        'action': result.action.name,
+        'pulled': result.action == FirebaseSyncAction.pulled,
+      });
       _applySyncResult(result);
       if (reloadAfterPull && result.action == FirebaseSyncAction.pulled) {
         sessions = await _database.loadSessions();
@@ -225,6 +260,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<FirebaseSyncResult> connectFirebaseUser() async {
+    FirebaseMonitoringService.logAction('firebase_user_connect_requested',
+        context: {'tab': _tabId(tab)});
     if (!FirebaseBootstrap.initialized) {
       final result = FirebaseSyncResult(FirebaseSyncAction.disabled,
           FirebaseBootstrap.error ?? 'Firebase non configuré');
@@ -270,6 +307,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
       }
       const result = FirebaseSyncResult(FirebaseSyncAction.unchanged,
           'Compte connecte. Utilise Synchroniser pour transferer les donnees.');
+      FirebaseMonitoringService.logAction('firebase_user_connected',
+          context: {'remote_exists': remoteExists});
       _applySyncResult(result);
       return result;
     } finally {
@@ -284,6 +323,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<void> disconnectFirebase() async {
+    FirebaseMonitoringService.logAction('firebase_user_disconnect_requested',
+        context: {'tab': _tabId(tab)});
     if (FirebaseBootstrap.initialized) {
       await FirebaseBootstrap.auth.signOut();
     }
@@ -295,6 +336,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<void> saveFirebaseSettings(FirebaseSettings settings) async {
+    FirebaseMonitoringService.logAction('firebase_settings_save_requested',
+        context: {'configured': settings.isConfigured});
     if (!settings.isConfigured) {
       throw const FormatException('Les quatre champs obligatoires sont requis');
     }
@@ -311,6 +354,7 @@ class AppController extends ChangeNotifier implements PersistableAppState {
         throw StateError(FirebaseBootstrap.error ??
             'Impossible d initialiser Firebase avec cette configuration');
       }
+      FirebaseMonitoringService.logAction('firebase_settings_saved');
       syncStatus = 'Firebase configuré, connexion utilisateur requise';
     } finally {
       syncing = false;
@@ -319,6 +363,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<void> resetFirebaseSettings() async {
+    FirebaseMonitoringService.logAction('firebase_settings_reset_requested',
+        context: {'tab': _tabId(tab)});
     syncing = true;
     notifyListeners();
     try {
@@ -356,10 +402,14 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<void> importBackup(Map<String, dynamic> payload) async {
+    FirebaseMonitoringService.logAction('backup_import_started',
+        context: {'tab': _tabId(tab)});
     final version = (payload['version'] as num?)?.round();
     if (version != null && version >= 2 && payload['data'] is Map) {
       await _database.replaceFromExport(payload);
       await load();
+      FirebaseMonitoringService.logAction('backup_import_finished',
+          context: {'version': version, 'format': 'modern'});
       return;
     }
     final state =
@@ -421,6 +471,8 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     forceMemberTariff = false;
     _normalizeCategoryFilter();
     await persist();
+    FirebaseMonitoringService.logAction('backup_import_finished',
+        context: {'version': version ?? 'legacy', 'format': 'legacy'});
     notifyListeners();
   }
 
@@ -450,8 +502,36 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   void setTab(int value) {
+    if (tab == value) return;
     tab = value;
+    final tabId = _tabId(value);
+    FirebaseMonitoringService.setContextKey('current_tab', tabId);
+    FirebaseMonitoringService.logAction('tab_opened', context: {'tab': tabId});
     notifyListeners();
+  }
+
+  String _tabId(int value) {
+    switch (value) {
+      case 0:
+        return AppTabIds.sales;
+      case 1:
+        return AppTabIds.meals;
+      case 2:
+        return AppTabIds.players;
+      case 3:
+        return AppTabIds.cash;
+      case 4:
+        return AppTabIds.stats;
+      case 5:
+        return AppTabIds.bilan;
+      case 6:
+        return AppTabIds.history;
+      case 7:
+        return AppTabIds.articles;
+      case 8:
+        return AppTabIds.config;
+    }
+    return 'unknown_$value';
   }
 
   Future<void> setAssociationName(String value) async {
@@ -518,11 +598,27 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   }
 
   Future<List<HelloAssoEvent>> fetchHelloAssoEvents() async {
-    return _helloAssoImport.fetchEvents(helloAssoSettings);
+    FirebaseMonitoringService.logAction('helloasso_events_fetch_started',
+        context: {'tab': _tabId(tab)});
+    try {
+      final events = await _helloAssoImport.fetchEvents(helloAssoSettings);
+      FirebaseMonitoringService.logAction('helloasso_events_fetch_finished',
+          context: {'count': events.length});
+      return events;
+    } catch (error, stackTrace) {
+      FirebaseMonitoringService.logAction('helloasso_events_fetch_failed',
+          context: {'error': error.runtimeType});
+      await FirebaseMonitoringService.recordError(error, stackTrace);
+      rethrow;
+    }
   }
 
   Future<void> createSession(String name,
       {HelloAssoEvent? helloassoEvent}) async {
+    FirebaseMonitoringService.logAction('session_create_started', context: {
+      'tab': _tabId(tab),
+      'helloasso': helloassoEvent != null,
+    });
     await persist();
     final registrants = helloassoEvent == null
         ? const <HelloAssoRegistrant>[]
@@ -569,6 +665,10 @@ class AppController extends ChangeNotifier implements PersistableAppState {
     _normalizeCategoryFilter();
     notifyListeners();
     await persist();
+    FirebaseMonitoringService.logAction('session_create_finished', context: {
+      'helloasso': helloassoEvent != null,
+      'registrants': registrants.length,
+    });
   }
 
   Future<void> switchSession(String sessionId) async {
@@ -753,8 +853,18 @@ class AppController extends ChangeNotifier implements PersistableAppState {
   Future<void> checkout(String payment) async {
     final player = selectedPlayer;
     if (player == null || !hasPendingPayment) return;
+    FirebaseMonitoringService.logAction('checkout_started', context: {
+      'tab': _tabId(tab),
+      'payment': payment,
+      'cart_lines': cart.length,
+      'has_donation': donation > 0,
+    });
     final shortages = cartStockShortages;
     if (shortages.isNotEmpty) {
+      FirebaseMonitoringService.logAction('checkout_blocked', context: {
+        'reason': 'stock_shortage',
+        'shortages': shortages.length,
+      });
       throw StateError(
           'Stock insuffisant : ${shortages.map((item) => item.message).join(' ; ')}');
     }
@@ -799,6 +909,10 @@ class AppController extends ChangeNotifier implements PersistableAppState {
       sales.add(sale);
       cart.clear();
       donation = 0;
+    });
+    FirebaseMonitoringService.logAction('checkout_finished', context: {
+      'payment': payment,
+      'items': saleItems.length,
     });
   }
 
@@ -1250,8 +1364,12 @@ class AppController extends ChangeNotifier implements PersistableAppState {
       };
 
   Future<Map<String, dynamic>> fullBackupPayload() async {
+    FirebaseMonitoringService.logAction('backup_export_started',
+        context: {'tab': _tabId(tab)});
     await persist(markUpdated: false);
-    return _database.exportAll();
+    final payload = await _database.exportAll();
+    FirebaseMonitoringService.logAction('backup_export_finished');
+    return payload;
   }
 }
 

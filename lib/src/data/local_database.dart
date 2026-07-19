@@ -643,6 +643,61 @@ class LocalDatabase {
     }
   }
 
+  Future<bool> loadTutorialWelcomeSeen() async {
+    final db = await database;
+    final rows = await db.query('app_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: ['tutorial_welcome_seen'],
+        limit: 1);
+    return rows.isNotEmpty && rows.first['value'] == 'true';
+  }
+
+  Future<void> saveTutorialWelcomeSeen() async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.insert(
+      'app_settings',
+      {
+        'key': 'tutorial_welcome_seen',
+        'value': 'true',
+        'updated_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<Set<String>> loadTutorialPagesSeen() async {
+    final db = await database;
+    final rows = await db.query('app_settings',
+        columns: ['value'],
+        where: 'key = ?',
+        whereArgs: ['tutorial_pages_seen'],
+        limit: 1);
+    if (rows.isEmpty || rows.first['value'] == null) return {};
+    try {
+      return (jsonDecode('${rows.first['value']}') as List)
+          .map((value) => '$value')
+          .toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveTutorialPagesSeen(Set<String> pageIds) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.insert(
+      'app_settings',
+      {
+        'key': 'tutorial_pages_seen',
+        'value': jsonEncode(pageIds.toList()..sort()),
+        'updated_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<DateTime?> loadLocalUpdatedAt() async {
     final db = await database;
     final rows = await db.query('app_settings',

@@ -27,3 +27,4 @@ export 'src/ui/pages/sales_page.dart';
 export 'src/ui/root_shell.dart';
 export 'src/ui/theme.dart';
 export 'src/ui/widgets/common_widgets.dart';
+export 'src/ui/widgets/tiko_tutorial.dart';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -59,6 +60,38 @@ class FirebaseMonitoringService {
     } catch (_) {}
   }
 
+  static void logAction(
+    String action, {
+    Map<String, Object?> context = const {},
+  }) {
+    if (!initialized || !MonitoringFirebaseConfig.shouldCollect) return;
+    final safeAction = _safeValue(action);
+    final details = context.entries
+        .where((entry) => entry.value != null)
+        .map((entry) => '${_safeKey(entry.key)}=${_safeValue(entry.value!)}')
+        .join(' ');
+    final message = details.isEmpty ? safeAction : '$safeAction $details';
+
+    try {
+      unawaited(FirebaseCrashlytics.instance.log(message));
+      unawaited(
+        FirebaseCrashlytics.instance.setCustomKey('last_action', safeAction),
+      );
+    } catch (_) {}
+  }
+
+  static void setContextKey(String key, Object value) {
+    if (!initialized || !MonitoringFirebaseConfig.shouldCollect) return;
+    try {
+      unawaited(
+        FirebaseCrashlytics.instance.setCustomKey(
+          _safeKey(key),
+          _safeValue(value),
+        ),
+      );
+    } catch (_) {}
+  }
+
   static Future<void> recordError(
     Object error,
     StackTrace stackTrace, {
@@ -98,5 +131,20 @@ class FirebaseMonitoringService {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       return true;
     };
+  }
+
+  static String _safeKey(String value) {
+    return value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+  }
+
+  static String _safeValue(Object value) {
+    final text = '$value'.replaceAll(RegExp(r'\s+'), '_').trim();
+    if (text.length <= 80) return text;
+    return text.substring(0, 80);
   }
 }

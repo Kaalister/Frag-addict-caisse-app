@@ -141,7 +141,7 @@ class FirebaseSyncService {
   String _friendlySyncError(Object exception) {
     if (exception is FirebaseException &&
         exception.code == 'permission-denied') {
-      return 'Accès Firestore refusé. Vérifie les règles dans Firebase Console.';
+      return 'Accès Firestore refusé. Publie les règles du guide avec le chemin exact organizations/default/users.';
     }
     if (exception is FirebaseException) {
       final detail = exception.message ?? exception.code;

@@ -16,6 +16,7 @@ import 'pages/players_page.dart';
 import 'pages/sales_page.dart';
 import 'theme.dart';
 import 'widgets/common_widgets.dart';
+import 'widgets/tiko_tutorial.dart';
 
 class RootShell extends StatefulWidget {
   const RootShell({required this.controller, super.key});
@@ -33,6 +34,11 @@ class _RootShellState extends State<RootShell> {
   bool openingUpdate = false;
   String? updateActionError;
   String? updateBackupStatus;
+  bool _tutorialTourQueued = false;
+  bool _tutorialTourRunning = false;
+  bool _welcomeDialogShown = false;
+  final Set<String> _queuedTutorialTabs = {};
+  String? _tutorialTabAwaitingReentry;
 
   AppController get controller => widget.controller;
 
@@ -115,6 +121,8 @@ class _RootShellState extends State<RootShell> {
             if (mounted) controller.setTab(destinations.first.tabIndex);
           });
         }
+        final selectedDestination = destinations[selectedIndex];
+        _queueAutomaticTutorial(destinations, selectedDestination.id);
         return LayoutBuilder(
           builder: (context, constraints) {
             final tablet = constraints.maxWidth >= 900;
@@ -159,6 +167,11 @@ class _RootShellState extends State<RootShell> {
                   preferredSize: Size.fromHeight(2),
                   child: _PrimaryAccentBar(),
                 ),
+                actions: [
+                  TikoTutorialButton(
+                    onPressed: () => _showPageTutorial(selectedDestination.id),
+                  ),
+                ],
               ),
               body: tablet
                   ? Row(
@@ -195,6 +208,113 @@ class _RootShellState extends State<RootShell> {
         );
       },
     );
+  }
+
+  void _queueAutomaticTutorial(
+    List<_ShellDestination> destinations,
+    String tabId,
+  ) {
+    if (_tutorialTourQueued || _tutorialTourRunning) return;
+    if (!controller.tutorialWelcomeSeen && !_welcomeDialogShown) {
+      _tutorialTourQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await _runFirstLaunchTutorialTour(destinations);
+      });
+      return;
+    }
+    if (_tutorialTabAwaitingReentry == tabId) return;
+    if (_tutorialTabAwaitingReentry != null) {
+      _tutorialTabAwaitingReentry = null;
+    }
+    if (controller.tutorialPagesSeen.contains(tabId) ||
+        _queuedTutorialTabs.contains(tabId)) {
+      return;
+    }
+    _queuedTutorialTabs.add(tabId);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await controller.markTutorialPageSeen(tabId);
+      if (!mounted) return;
+      await _showPageTutorial(tabId);
+      _queuedTutorialTabs.remove(tabId);
+    });
+  }
+
+  Future<void> _runFirstLaunchTutorialTour(
+      List<_ShellDestination> destinations) async {
+    if (_tutorialTourRunning) return;
+    _tutorialTourRunning = true;
+    _welcomeDialogShown = true;
+
+    final wantsTour = await _showTikoDialog(tikoWelcomeTutorial(),
+        primaryActionLabel: 'C\'est parti');
+    if (!mounted) return;
+    await controller.markTutorialWelcomeSeen();
+    if (!wantsTour || !mounted) {
+      setState(() {
+        _tutorialTourRunning = false;
+        _tutorialTourQueued = false;
+      });
+      return;
+    }
+
+    final tourDestinations = _firstLaunchTourDestinations(destinations);
+    for (final destination in tourDestinations) {
+      if (!mounted) return;
+      if (controller.tab != destination.tabIndex) {
+        controller.setTab(destination.tabIndex);
+        await Future<void>.delayed(kThemeAnimationDuration);
+      }
+      if (!mounted) return;
+      final completed = await _showTikoDialog(
+        tikoOnboardingForTab(destination.id),
+        primaryActionLabel: destination.id == AppTabIds.articles
+            ? 'Créer mon premier article'
+            : 'Continuer',
+      );
+      if (!completed || !mounted) break;
+    }
+
+    if (mounted) {
+      setState(() {
+        if (controller.tab == 7) {
+          _tutorialTabAwaitingReentry = AppTabIds.articles;
+        }
+        _tutorialTourRunning = false;
+        _tutorialTourQueued = false;
+      });
+    }
+  }
+
+  List<_ShellDestination> _firstLaunchTourDestinations(
+      List<_ShellDestination> destinations) {
+    final articleDestinations = destinations
+        .where((destination) => destination.id == AppTabIds.articles)
+        .toList();
+    return [
+      for (final destination in destinations)
+        if (destination.id != AppTabIds.articles) destination,
+      ...articleDestinations,
+    ];
+  }
+
+  Future<bool> _showPageTutorial(String tabId) {
+    return _showTikoDialog(tikoTutorialForTab(tabId));
+  }
+
+  Future<bool> _showTikoDialog(
+    TikoTutorialContent content, {
+    String primaryActionLabel = 'Compris',
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => TikoTutorialDialog(
+            content: content,
+            primaryActionLabel: primaryActionLabel,
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _editSession(BuildContext context) async {
@@ -363,9 +483,7 @@ class _CompactBottomNavigation extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: selected
-                                      ? context.primaryAccent
-                                      : AppColors.text,
+                                  color: context.primaryAccent,
                                   fontWeight: selected
                                       ? FontWeight.w800
                                       : FontWeight.w600,

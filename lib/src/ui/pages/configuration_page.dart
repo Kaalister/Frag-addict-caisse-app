@@ -19,6 +19,7 @@ import '../../services/firebase_sync_service.dart';
 import '../dialogs.dart';
 import '../theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/tiko_tutorial.dart';
 
 class ArticlesPricePage extends StatelessWidget {
   const ArticlesPricePage({required this.controller, super.key});
@@ -555,12 +556,10 @@ class _ConfigPageState extends State<ConfigPage>
                     ? 'Se connecter'
                     : 'Activer Firebase'),
               ),
-            if (!connected)
-              OutlinedButton.icon(
-                onPressed: () => showFirebaseHelpDialog(context),
-                icon: const Icon(Icons.help_outline),
-                label: const Text('À quoi ça sert ?'),
-              ),
+            TikoHelpButton(
+              tooltip: 'Tiko explique Firebase',
+              onPressed: () => showFirebaseHelpDialog(context),
+            ),
             if (connected)
               FilledButton.tonalIcon(
                 onPressed:
@@ -633,13 +632,11 @@ class _ConfigPageState extends State<ConfigPage>
             icon: const Icon(Icons.settings),
             label: const Text('Configurer'),
           ),
-          if (!controller.helloAssoSettings.isConfigured)
-            OutlinedButton.icon(
-              onPressed: () => showHelloAssoHelpDialog(context,
-                  mealsEnabled: controller.mealsEnabled),
-              icon: const Icon(Icons.help_outline),
-              label: const Text('À quoi ça sert ?'),
-            ),
+          TikoHelpButton(
+            tooltip: 'Tiko explique HelloAsso',
+            onPressed: () => showHelloAssoHelpDialog(context,
+                mealsEnabled: controller.mealsEnabled),
+          ),
           FilledButton.tonalIcon(
             onPressed: controller.helloAssoSettings.isConfigured
                 ? () async {

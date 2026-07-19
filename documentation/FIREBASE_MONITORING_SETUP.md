@@ -109,3 +109,22 @@ Les rapports Analytics complets peuvent mettre plusieurs heures a apparaitre.
 
 Crashlytics peut prendre quelques minutes avant d'afficher les premiers
 evenements.
+
+## Diagnostic des actions avant crash
+
+L'application ajoute des breadcrumbs Crashlytics anonymes pour aider a
+comprendre ce qui s'est passe avant un crash. Dans un rapport Crashlytics,
+ouvrir le detail du crash puis consulter les **Logs** et les **Custom keys**.
+
+Les informations utiles sont notamment :
+
+- `current_tab` : dernier onglet ouvert (`sales`, `meals`, `players`, etc.) ;
+- `last_action` : derniere action tracee ;
+- logs `tab_opened`, `checkout_started`, `checkout_finished` ;
+- logs `firebase_sync_requested`, `firebase_sync_finished` ;
+- logs `backup_import_started`, `backup_export_started` ;
+- logs `helloasso_events_fetch_started`, `session_create_started`.
+
+Ces traces ne contiennent pas les noms, emails, details du panier, secrets API
+ou contenu de sauvegarde. Elles servent uniquement a retrouver le contexte
+technique d'un crash.

@@ -78,7 +78,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /organizations/default/users/{userId}/snapshots/{snapshotId} {
       allow read, write: if request.auth != null
-                         && request.auth.uid == userId;
+                         && request.auth.uid == userId
+                         && snapshotId in ['caisse-main', 'caisse-dev'];
     }
   }
 }
@@ -88,9 +89,15 @@ service cloud.firestore {
 4. Attendre une minute avant le premier essai si l'ancienne regle vient d'etre
    remplacee.
 
-Ces regles refusent les utilisateurs non connectes et limitent chaque compte a
-son propre chemin. Elles correspondent au fichier [`../firestore.rules`](../firestore.rules).
-Firebase permet aussi de les publier avec la CLI.
+Le mot `default` dans `organizations/default/users` est une valeur litterale
+utilisee par Tilly. Il ne faut pas le remplacer par le nom du projet Firebase
+ou de l'association.
+
+Ces regles refusent les utilisateurs non connectes, limitent chaque compte a
+son propre chemin et autorisent uniquement les snapshots `caisse-main` et
+`caisse-dev`. Elles correspondent au fichier
+[`../firestore.rules`](../firestore.rules). Firebase permet aussi de les
+publier avec la CLI.
 
 Documentation officielle :
 [regles de securite Cloud Firestore](https://firebase.google.com/docs/firestore/security/get-started).
@@ -197,6 +204,12 @@ organizations/default/users/{uid}/snapshots/caisse-main
 Les builds de developpement utilisent `caisse-dev` afin de ne pas melanger
 leurs donnees avec une version publiee.
 
+La synchronisation est manuelle. Tilly compare la date de la version locale et
+de la version Firebase : elle envoie le snapshot local complet lorsqu'il est le
+plus recent, ou propose de remplacer les donnees locales lorsque Firebase
+contient une version plus recente. Les modifications ne sont pas fusionnees
+ligne par ligne.
+
 ## 11. Ajouter un deuxieme appareil
 
 1. Installer l'application sur le deuxieme appareil.
@@ -208,6 +221,10 @@ leurs donnees avec une version publiee.
 5. Cliquer sur **Synchroniser**.
 6. Si Firebase contient des donnees plus recentes, confirmer la restauration.
    L'application cree d'abord une sauvegarde locale de securite.
+
+Ne pas modifier les donnees sur deux appareils en meme temps. Synchroniser
+avant de changer d'appareil, effectuer les modifications sur un seul appareil,
+puis synchroniser de nouveau avant de reprendre sur l'autre.
 
 ## 12. Erreurs courantes
 
@@ -227,8 +244,10 @@ Verifier que :
 
 ### Acces Firestore refuse
 
-Verifier que les regles de la section 6 ont ete collees puis **publiees**. Le
-chemin doit contenir `organizations/default/users`.
+Verifier que les regles de la section 6 ont ete collees puis **publiees dans le
+projet Firebase configure dans Tilly**, et non dans le projet de monitoring.
+Le chemin doit contenir exactement `organizations/default/users` : `default`
+ne doit pas etre remplace par le nom de l'association.
 
 ### Aucune donnee sur le deuxieme appareil
 
