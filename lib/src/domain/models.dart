@@ -714,6 +714,7 @@ class FirebaseSettings {
     this.authDomain = '',
     this.storageBucket = '',
     this.measurementId = '',
+    this.iosBundleId = '',
   });
 
   final String apiKey;
@@ -723,6 +724,7 @@ class FirebaseSettings {
   final String authDomain;
   final String storageBucket;
   final String measurementId;
+  final String iosBundleId;
 
   bool get isConfigured =>
       apiKey.trim().isNotEmpty &&
@@ -738,6 +740,7 @@ class FirebaseSettings {
         authDomain: _optional(authDomain),
         storageBucket: _optional(storageBucket),
         measurementId: _optional(measurementId),
+        iosBundleId: _optional(iosBundleId),
       );
 
   Map<String, dynamic> toJson() => {
@@ -748,6 +751,7 @@ class FirebaseSettings {
         'authDomain': authDomain,
         'storageBucket': storageBucket,
         'measurementId': measurementId,
+        'iosBundleId': iosBundleId,
       };
 
   factory FirebaseSettings.fromJson(Map<String, dynamic> json) =>
@@ -759,6 +763,7 @@ class FirebaseSettings {
         authDomain: '${json['authDomain'] ?? ''}',
         storageBucket: '${json['storageBucket'] ?? ''}',
         measurementId: '${json['measurementId'] ?? ''}',
+        iosBundleId: '${json['iosBundleId'] ?? ''}',
       );
 
   static String? _optional(String value) {
@@ -784,6 +789,9 @@ FirebaseSettings parseFirebaseSettings(String source) {
     }
   } catch (_) {}
 
+  final applePlist = _firebaseSettingsFromApplePlist(value);
+  if (applePlist != null) return applePlist;
+
   String field(String name) {
     final match = RegExp(
       '["\']?$name["\']?\\s*:\\s*["\']([^"\']+)["\']',
@@ -800,6 +808,7 @@ FirebaseSettings parseFirebaseSettings(String source) {
     authDomain: field('authDomain'),
     storageBucket: field('storageBucket'),
     measurementId: field('measurementId'),
+    iosBundleId: field('iosBundleId'),
   );
   if (!settings.isConfigured) {
     throw const FormatException(
@@ -807,6 +816,33 @@ FirebaseSettings parseFirebaseSettings(String source) {
   }
   return settings;
 }
+
+FirebaseSettings? _firebaseSettingsFromApplePlist(String value) {
+  String plistField(String key) {
+    final match = RegExp(
+      '<key>\\s*${RegExp.escape(key)}\\s*</key>\\s*<string>([^<]*)</string>',
+      caseSensitive: false,
+    ).firstMatch(value);
+    return _decodeXmlValue(match?.group(1) ?? '').trim();
+  }
+
+  final settings = FirebaseSettings(
+    apiKey: plistField('API_KEY'),
+    appId: plistField('GOOGLE_APP_ID'),
+    messagingSenderId: plistField('GCM_SENDER_ID'),
+    projectId: plistField('PROJECT_ID'),
+    storageBucket: plistField('STORAGE_BUCKET'),
+    iosBundleId: plistField('BUNDLE_ID'),
+  );
+  return settings.isConfigured ? settings : null;
+}
+
+String _decodeXmlValue(String value) => value
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'");
 
 FirebaseSettings? _firebaseSettingsFromGoogleServices(
     Map<String, dynamic> json) {

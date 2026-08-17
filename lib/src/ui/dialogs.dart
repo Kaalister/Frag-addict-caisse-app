@@ -507,6 +507,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
   late final TextEditingController authDomain;
   late final TextEditingController storageBucket;
   late final TextEditingController measurementId;
+  late final TextEditingController iosBundleId;
   late FirebaseSettings settings;
   late bool editingProject;
   bool manualEntry = false;
@@ -526,6 +527,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
     authDomain = TextEditingController(text: settings.authDomain);
     storageBucket = TextEditingController(text: settings.storageBucket);
     measurementId = TextEditingController(text: settings.measurementId);
+    iosBundleId = TextEditingController(text: settings.iosBundleId);
   }
 
   @override
@@ -540,6 +542,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
     authDomain.dispose();
     storageBucket.dispose();
     measurementId.dispose();
+    iosBundleId.dispose();
     super.dispose();
   }
 
@@ -553,6 +556,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
       authDomain: authDomain.text,
       storageBucket: storageBucket.text,
       measurementId: measurementId.text,
+      iosBundleId: iosBundleId.text,
     );
   }
 
@@ -619,7 +623,7 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
                           labelText: 'Configuration à coller',
                           alignLabelWithHint: true,
                           hintText:
-                              'Bloc firebaseConfig ou contenu de google-services.json',
+                              'firebaseConfig, google-services.json ou GoogleService-Info.plist',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -758,6 +762,11 @@ class _FirebaseSetupDialogState extends State<_FirebaseSetupDialog> {
             controller: measurementId,
             decoration:
                 const InputDecoration(labelText: 'Measurement ID (optionnel)')),
+        const SizedBox(height: 8),
+        TextField(
+            controller: iosBundleId,
+            decoration: const InputDecoration(
+                labelText: 'Bundle ID Apple (optionnel)')),
       ],
     );
   }

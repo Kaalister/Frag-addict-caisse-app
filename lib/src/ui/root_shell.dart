@@ -711,7 +711,9 @@ class UpdateRequiredScaffold extends StatelessWidget {
                     Text(
                       Platform.isAndroid
                           ? 'Installe le nouvel APK par-dessus l’application existante. Ne la désinstalle pas et n’efface pas ses données : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.'
-                          : 'Exécute l’installateur sur l’installation existante. Ne supprime pas les données de l’application : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.',
+                          : Platform.isMacOS
+                              ? 'Ouvre l’image disque puis remplace Tilly dans Applications. Ne supprime pas les données de l’application : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.'
+                              : 'Exécute l’installateur sur l’installation existante. Ne supprime pas les données de l’application : la connexion Firebase, la configuration HelloAsso et la base locale sont alors conservées.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: AppColors.muted),
                     ),
@@ -727,7 +729,9 @@ class UpdateRequiredScaffold extends StatelessWidget {
                       label: Text(
                         Platform.isAndroid
                             ? 'Sauvegarder puis télécharger l’APK'
-                            : 'Sauvegarder puis télécharger l’installateur',
+                            : Platform.isMacOS
+                                ? 'Sauvegarder puis télécharger le DMG'
+                                : 'Sauvegarder puis télécharger l’installateur',
                       ),
                     ),
                     const SizedBox(height: 8),

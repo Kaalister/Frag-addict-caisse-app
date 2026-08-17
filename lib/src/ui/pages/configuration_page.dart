@@ -497,7 +497,11 @@ class _ConfigPageState extends State<ConfigPage>
               onPressed: () => onOpenUpdate(updateResult!.update!),
               icon: const Icon(Icons.download),
               label: Text(
-                Platform.isAndroid ? 'Télécharger APK' : 'Télécharger',
+                Platform.isAndroid
+                    ? 'Télécharger APK'
+                    : Platform.isMacOS
+                        ? 'Télécharger DMG'
+                        : 'Télécharger',
               ),
             ),
           OutlinedButton.icon(
@@ -836,7 +840,7 @@ class _ConfigPageState extends State<ConfigPage>
       return 'Le contrôle forcé est actif uniquement dans les builds release. Version build : $appBuildVersion.';
     }
     if (!AppUpdateService.supportedPlatform) {
-      return 'Le contrôle GitHub est prévu pour Android et Windows.';
+      return 'Le contrôle GitHub est prévu pour Android, Windows et macOS.';
     }
     final update = updateResult?.update;
     if (update != null) {

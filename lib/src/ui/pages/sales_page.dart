@@ -184,6 +184,7 @@ class _FloatingCartSheetState extends State<_FloatingCartSheet>
         builder: (context, scrollController) => CartPanel(
           controller: widget.controller,
           floating: true,
+          collapsed: _isClosed,
           scrollController: scrollController,
         ),
       ),
@@ -520,6 +521,7 @@ class CartPanel extends StatelessWidget {
   const CartPanel({
     required this.controller,
     this.floating = false,
+    this.collapsed = false,
     this.scrollController,
     super.key,
   });
@@ -529,6 +531,7 @@ class CartPanel extends StatelessWidget {
 
   final AppController controller;
   final bool floating;
+  final bool collapsed;
   final ScrollController? scrollController;
 
   @override
@@ -587,52 +590,46 @@ class CartPanel extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact = constraints.maxHeight < 430;
-            return CustomScrollView(
-              controller: scrollController,
-              physics: const ClampingScrollPhysics(),
-              slivers: [
-                SliverFillRemaining(
-                  hasScrollBody: true,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(10, 8, 10, bottomPadding),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 42,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: AppColors.border,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
+        child: CustomScrollView(
+          controller: scrollController,
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(10, 8, 10, bottomPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        const SizedBox(height: 10),
-                        _buildHeader(context),
-                        const SizedBox(height: 8),
-                        if (shortages.isNotEmpty) ...[
-                          _buildShortages(shortages),
-                          const SizedBox(height: 8),
-                        ],
-                        if (!compact) ...[
-                          _buildTariffSwitch(),
-                          Expanded(child: _buildCartList(context)),
-                          _buildDonationField(),
-                          const SizedBox(height: 8),
-                          _buildPaymentButtons(context, canCheckout),
-                          _buildClearButton(hasPendingPayment),
-                        ],
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 10),
+                    _buildHeader(context),
+                    if (!collapsed) ...[
+                      const SizedBox(height: 8),
+                      if (shortages.isNotEmpty) ...[
+                        _buildShortages(shortages),
+                        const SizedBox(height: 8),
+                      ],
+                      _buildTariffSwitch(),
+                      _buildCartList(context),
+                      _buildDonationField(),
+                      const SizedBox(height: 8),
+                      _buildPaymentButtons(context, canCheckout),
+                      _buildClearButton(hasPendingPayment),
+                    ],
+                  ],
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );

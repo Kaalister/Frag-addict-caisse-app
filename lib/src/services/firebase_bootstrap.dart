@@ -109,7 +109,8 @@ class FirebaseBootstrap {
       left.projectId == right.projectId &&
       left.authDomain == right.authDomain &&
       left.storageBucket == right.storageBucket &&
-      left.measurementId == right.measurementId;
+      left.measurementId == right.measurementId &&
+      left.iosBundleId == right.iosBundleId;
 
   static String _nextSyncAppName() {
     final names = Firebase.apps.map((app) => app.name).toSet();

@@ -3,7 +3,7 @@
 Ce fichier liste uniquement ce qu'il reste a relire ou modifier pour vendre
 l'application avec un tuto de mise en place simple : installation + Firebase.
 
-Derniere mise a jour : 2026-07-18.
+Derniere mise a jour : 2026-08-17.
 
 ## Documentation a relire
 
@@ -87,6 +87,30 @@ organizations/default/users/{userId}/snapshots/caisse-main
 - [ ] Ajouter une section dans le tuto de mise en place pour l'installation iOS
       lorsque la version web sera disponible.
 - [ ] Tester sur iPhone et iPad reels.
+
+### Version macOS desktop
+
+- [x] Ajouter la cible macOS au projet Flutter.
+- [x] Utiliser le plugin SQLite natif `sqflite_darwin` sur macOS sans remplacer
+      sa factory par la factory FFI.
+- [x] Verifier le lancement en mode debug.
+- [x] Verifier visuellement l'affichage et la navigation de l'application.
+- [x] Verifier la persistance des reglages et l'acces a la base SQLite locale.
+- [x] Produire et lancer un build macOS release universel Intel et Apple Silicon.
+- [x] Ajouter la creation des archives ZIP et DMG au workflow GitHub Actions.
+- [x] Verifier que l'archive ZIP est integre et que l'application extraite
+      conserve une signature interne valide.
+- [x] Verifier que le DMG est integre, montable et contient `Tilly.app` ainsi
+      que le raccourci vers `Applications`.
+- [x] Retenir une distribution gratuite sans certificat Apple payant, signature
+      `Developer ID` ni notarisation.
+- [x] Documenter l'installation depuis le DMG non signe et la procedure macOS
+      `Reglages Systeme > Confidentialite et securite > Ouvrir quand meme`.
+- [x] Preciser qu'il ne faut ni desactiver Gatekeeper ni utiliser une commande
+      Terminal pour installer Tilly.
+- [x] Documenter le remplacement de l'application sans perte des donnees
+      locales.
+- [ ] Tester l'installation et la mise a jour depuis le DMG sur un deuxieme Mac.
 
 ### Personnalisation
 

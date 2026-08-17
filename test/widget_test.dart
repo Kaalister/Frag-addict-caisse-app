@@ -716,6 +716,7 @@ void main() {
       messagingSenderId: 'sender-id',
       projectId: 'project-id',
       authDomain: 'project.firebaseapp.com',
+      iosBundleId: 'com.tilly.caisse',
     );
 
     final restored = FirebaseSettings.fromJson(settings.toJson());
@@ -725,6 +726,7 @@ void main() {
     expect(options.apiKey, 'api-key');
     expect(options.projectId, 'project-id');
     expect(options.authDomain, 'project.firebaseapp.com');
+    expect(options.iosBundleId, 'com.tilly.caisse');
   });
 
   test('Firebase settings require the four core identifiers', () {
@@ -775,6 +777,33 @@ void main() {
     expect(settings.isConfigured, isTrue);
     expect(settings.appId, 'android-app-id');
     expect(settings.messagingSenderId, 'sender-id');
+  });
+
+  test('Firebase Apple GoogleService-Info plist can be pasted', () {
+    final settings = parseFirebaseSettings('''
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0">
+      <dict>
+        <key>API_KEY</key>
+        <string>api-key</string>
+        <key>GCM_SENDER_ID</key>
+        <string>sender-id</string>
+        <key>PROJECT_ID</key>
+        <string>project-id</string>
+        <key>STORAGE_BUCKET</key>
+        <string>project.firebasestorage.app</string>
+        <key>GOOGLE_APP_ID</key>
+        <string>apple-app-id</string>
+        <key>BUNDLE_ID</key>
+        <string>com.tilly.caisse</string>
+      </dict>
+      </plist>
+    ''');
+
+    final options = settings.toOptions();
+    expect(settings.isConfigured, isTrue);
+    expect(settings.appId, 'apple-app-id');
+    expect(options.iosBundleId, 'com.tilly.caisse');
   });
 
   test('empty modern backups are rejected before replacement', () {
@@ -1232,6 +1261,98 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Vider'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('collapsed mobile cart fits above Android system inset',
+      (tester) async {
+    final controller = _MemoryAppController()
+      ..players = [
+        Player(id: 'player-1', name: 'Alice Dupont', type: 'public'),
+      ]
+      ..articles = [
+        Article(
+          id: 'drink-1',
+          category: 'BOISSONS',
+          type: 'standard',
+          icon: 'B',
+          name: 'Boisson',
+          price: 2,
+          memberPrice: 1.5,
+          stock: 20,
+          threshold: 5,
+        ),
+      ];
+    controller
+      ..selectPlayer(controller.players.first)
+      ..addToCart(controller.articles.first);
+
+    tester.view.physicalSize = const Size(393, 892);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: MediaQuery(
+          data: const MediaQueryData(
+            padding: EdgeInsets.only(bottom: 24),
+            textScaler: TextScaler.linear(1.1),
+          ),
+          child: Scaffold(body: CaissePage(controller: controller)),
+        ),
+      ),
+    );
+
+    expect(find.text('PANIER (1)'), findsOneWidget);
+    expect(find.text('ESP'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('collapsed mobile cart does not overflow when keyboard opens',
+      (tester) async {
+    final controller = _MemoryAppController()
+      ..players = [
+        Player(id: 'player-1', name: 'Alice Dupont', type: 'public'),
+      ]
+      ..articles = [
+        Article(
+          id: 'drink-1',
+          category: 'BOISSONS',
+          type: 'standard',
+          icon: 'B',
+          name: 'Boisson',
+          price: 2,
+          memberPrice: 1.5,
+          stock: 20,
+          threshold: 5,
+        ),
+      ];
+    controller
+      ..selectPlayer(controller.players.first)
+      ..addToCart(controller.articles.first);
+
+    tester.view.physicalSize = const Size(393, 783);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: caisseTheme(AppColors.accent),
+        home: Scaffold(body: CaissePage(controller: controller)),
+      ),
+    );
+
+    await tester
+        .tap(find.widgetWithText(TextField, 'Rechercher un participant'));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 360);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('PANIER (1)'), findsOneWidget);
+    expect(find.text('ESP'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

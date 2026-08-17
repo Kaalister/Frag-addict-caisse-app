@@ -24,6 +24,39 @@ compiler Flutter ni d'utiliser GitHub Actions.
    bien du vendeur, puis continuer l'installation.
 4. Ouvrir l'application depuis le menu Demarrer ou le raccourci cree.
 
+### macOS
+
+La version macOS de Tilly est distribuee gratuitement sans signature
+`Developer ID` ni notarisation Apple. Elle reste installable, mais macOS ne
+peut pas verifier l'identite du developpeur et bloque son premier lancement.
+
+#### Installer Tilly
+
+1. Recuperer l'image disque `Tilly-macOS-<version>.dmg` depuis la source
+   officielle communiquee par le vendeur.
+2. Ouvrir le fichier `.dmg`.
+3. Glisser **Tilly** sur le raccourci **Applications** affiche dans l'image
+   disque.
+4. Ouvrir le dossier **Applications** et essayer de lancer **Tilly** une
+   premiere fois.
+5. Si macOS indique que le developpeur ne peut pas etre verifie ou qu'Apple ne
+   peut pas rechercher les logiciels malveillants, fermer le message.
+6. Ouvrir **Reglages Systeme > Confidentialite et securite**.
+7. Descendre jusqu'a la section **Securite**, puis cliquer sur
+   **Ouvrir quand meme** pour Tilly.
+8. Saisir le mot de passe ou utiliser Touch ID si macOS le demande, puis
+   confirmer avec **Ouvrir**.
+
+Cette confirmation ne concerne que le premier lancement de cette copie de
+Tilly. Les lancements suivants se font normalement depuis **Applications**.
+Ne jamais contourner cet avertissement si le DMG ne provient pas de la source
+officielle. Il n'est pas necessaire de desactiver Gatekeeper ni d'executer une
+commande dans le Terminal.
+
+Procedure Apple officielle :
+
+https://support.apple.com/en-euro/guide/mac-help/mh40616/mac
+
 ## 2. Mettre a jour l'application
 
 Pour conserver les donnees :
@@ -142,8 +175,9 @@ https://firebase.google.com/docs/firestore/security/get-started
 
 ## 9. Recuperer la configuration Firebase
 
-La configuration depend de la plateforme. Android et Windows appartiennent au
-meme projet Firebase, mais utilisent deux applications Firebase differentes.
+La configuration depend de la plateforme. Android, Windows et macOS
+appartiennent au meme projet Firebase, mais utilisent des applications
+Firebase differentes.
 
 ### 9.1 Android
 
@@ -202,6 +236,17 @@ Documentation officielle :
 
 https://firebase.google.com/docs/web/setup
 
+### 9.3 macOS
+
+La caisse macOS utilise une application Firebase Apple.
+
+1. Revenir a la vue d'ensemble du projet Firebase.
+2. Cliquer sur `Ajouter une application`, puis sur l'icone Apple.
+3. Saisir exactement le bundle ID `com.tilly.caisse`.
+4. Choisir un surnom libre, par exemple `Caisse macOS`.
+5. Enregistrer l'application et telecharger `GoogleService-Info.plist`.
+6. Ouvrir ce fichier avec un editeur de texte et copier tout son contenu.
+
 ## 10. Renseigner Firebase dans l'application
 
 Dans l'application :
@@ -210,7 +255,7 @@ Dans l'application :
 2. Cliquer sur `Activer Firebase`.
 3. Cliquer sur `Coller`, ou coller manuellement le contenu correspondant a la
    plateforme : `google-services.json` sur Android ou `firebaseConfig` sur
-   Windows.
+   Windows, ou `GoogleService-Info.plist` sur macOS.
 4. Saisir l'email et le mot de passe crees dans Firebase.
 5. Cliquer sur `Activer`.
 6. Verifier que l'etat indique `Synchronisation active`.

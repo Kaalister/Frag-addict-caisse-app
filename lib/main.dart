@@ -13,7 +13,10 @@ import 'src/services/secure_settings_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await _lockPhoneToPortrait();
-  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+  // macOS uses the native sqflite_darwin plugin, just like Android. Replacing
+  // its already-registered factory with the FFI factory triggers a warning and
+  // can affect plugins that share sqflite's global factory.
+  if (Platform.isWindows || Platform.isLinux) {
     sqflite_ffi.sqfliteFfiInit();
     databaseFactory = sqflite_ffi.databaseFactoryFfi;
   }

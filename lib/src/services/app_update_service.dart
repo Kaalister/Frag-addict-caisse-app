@@ -42,7 +42,8 @@ class AppUpdateResult {
 class AppUpdateService {
   static const _requestTimeout = Duration(seconds: 15);
 
-  static bool get supportedPlatform => Platform.isAndroid || Platform.isWindows;
+  static bool get supportedPlatform =>
+      Platform.isAndroid || Platform.isWindows || Platform.isMacOS;
 
   static Future<AppUpdateResult> check() async {
     if (!supportedPlatform) {
@@ -123,6 +124,14 @@ class AppUpdateService {
           }).firstOrNull ??
           typedAssets.where((asset) => matches(asset, '.exe')).firstOrNull ??
           typedAssets.where((asset) => matches(asset, '.zip')).firstOrNull;
+    }
+    if (Platform.isMacOS) {
+      return typedAssets.where((asset) => matches(asset, '.dmg')).firstOrNull ??
+          typedAssets.where((asset) {
+            final name = '${asset['name'] ?? ''}'.toLowerCase();
+            return name.endsWith('.zip') &&
+                (name.contains('macos') || name.contains('mac-'));
+          }).firstOrNull;
     }
     return null;
   }

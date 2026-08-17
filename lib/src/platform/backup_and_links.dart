@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
@@ -140,8 +141,26 @@ Future<Map<String, String>?> _pickJsonBackupFile() async {
     return _pickJsonBackupFileWindows();
   }
 
+  if (Platform.isMacOS) {
+    return _pickJsonBackupFileMacOS();
+  }
+
   throw UnsupportedError(
       'Import de sauvegarde non supporté sur cette plateforme');
+}
+
+Future<Map<String, String>?> _pickJsonBackupFileMacOS() async {
+  final result = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['json'],
+    allowMultiple: false,
+  );
+  final selectedPath = result?.files.single.path;
+  if (selectedPath == null || selectedPath.trim().isEmpty) return null;
+
+  final file = File(selectedPath);
+  final content = await file.readAsString(encoding: utf8);
+  return {'name': path.basename(file.path), 'content': content};
 }
 
 Future<Map<String, String>?> _pickJsonBackupFileWindows() async {

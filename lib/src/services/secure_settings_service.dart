@@ -8,7 +8,11 @@ import 'firebase_bootstrap.dart';
 class SecureSettingsService {
   static const _helloAssoSecretPrefix = 'helloasso_client_secret';
   static const _firebaseSettingsKey = 'firebase_settings';
-  static const _storage = FlutterSecureStorage();
+  // The legacy macOS keychain works with Flutter's ad-hoc local signing.
+  // The data-protection keychain requires a Developer ID entitlement.
+  static const _storage = FlutterSecureStorage(
+    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+  );
 
   String get _helloAssoSecretKey =>
       '${_helloAssoSecretPrefix}_${FirebaseBootstrap.currentUser?.uid ?? 'local'}';

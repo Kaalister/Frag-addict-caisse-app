@@ -1,9 +1,9 @@
 # Tilly
 
 Application de caisse Flutter pour les journees airsoft de Tilly. Elle
-permet de gerer une partie depuis un telephone Android ou un poste Windows :
-inscriptions, ventes, stock, paiements, controle de la caisse et rapports de
-fin de journee.
+permet de gerer une partie depuis un telephone Android, un poste Windows ou
+un Mac : inscriptions, ventes, stock, paiements, controle de la caisse et
+rapports de fin de journee.
 
 L'application fonctionne hors ligne avec une base SQLite locale. Les services
 Firebase et HelloAsso sont optionnels : ils ajoutent respectivement la
@@ -29,7 +29,7 @@ synchronisation entre appareils et l'import d'inscrits a un evenement.
 - Import optionnel d'evenements et de joueurs payants depuis HelloAsso.
 - Suivi developpeur Android optionnel avec Firebase Analytics et Crashlytics.
 - Verification des mises a jour publiees sur GitHub dans les builds release
-  Android et Windows.
+  Android, Windows et macOS.
 
 ## Plateformes
 
@@ -37,6 +37,7 @@ Les artefacts distribues sont prevus pour :
 
 - Android : fichier APK installable directement.
 - Windows x64 : installateur `.exe` ou archive portable `.zip`.
+- macOS : image disque `.dmg` ou archive `.zip` contenant `Tilly.app`.
 
 Pour les tags publies avec ce workflow, les liens publics directs vers la
 derniere release sont :
@@ -47,6 +48,8 @@ derniere release sont :
   [TillySetup-latest.exe](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/TillySetup-latest.exe)
 - Windows portable :
   [Tilly-Windows-latest.zip](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/Tilly-Windows-latest.zip)
+- macOS :
+  [Tilly-macOS-latest.dmg](https://github.com/Kaalister/Tilly-caisse-app/releases/latest/download/Tilly-macOS-latest.dmg)
 
 Ces liens pointent vers les assets de GitHub Release et sont telechargeables
 sans compte GitHub lorsque le depot est public. Ne pas partager les liens
@@ -84,6 +87,8 @@ desinstaller et sans effacer ses donnees :
 - Windows : executer le nouvel installateur dans le meme emplacement. Il
   remplace les fichiers du programme sans supprimer les donnees utilisateur
   stockees hors du dossier d'installation.
+- macOS : ouvrir le nouveau DMG et remplacer `Tilly.app` dans Applications.
+  Les donnees restent dans le dossier Application Support de l'utilisateur.
 - Depuis l'ecran de mise a jour de l'application, une sauvegarde JSON de
   recuperation est automatiquement creee dans `Downloads` avant l'ouverture
   du fichier a telecharger.
@@ -105,6 +110,18 @@ une mise a jour et ne permet pas cette conservation.
 L'archive `Tilly-Windows-<version>.zip` est disponible pour un
 usage portable : extraire tout le dossier puis executer
 `tilly.exe`.
+
+### macOS
+
+1. Telecharger `Tilly-macOS-<version>.dmg` depuis la page
+   [Releases GitHub](https://github.com/Kaalister/Tilly-caisse-app/releases/latest).
+2. Ouvrir l'image disque et glisser **Tilly** dans **Applications**.
+3. Lancer **Tilly** depuis le dossier Applications.
+
+L'archive `Tilly-macOS-<version>.zip` contient egalement `Tilly.app`.
+Tant que la signature Developer ID et la notarisation Apple ne sont pas
+configurees dans le workflow, macOS peut demander de confirmer le premier
+lancement via clic droit sur l'application, puis **Ouvrir**.
 
 ## Utilisation
 
@@ -179,13 +196,15 @@ En mode developpement, la base et le snapshot Firebase utilisent un suffixe
 - Pour compiler Windows : Windows avec Visual Studio et la charge de travail
   **Desktop development with C++**.
 - Pour produire l'installateur Windows : Inno Setup 6.
+- Pour compiler macOS : un Mac avec Xcode complet, les outils en ligne de
+  commande Xcode et CocoaPods.
 
 ### Paquets Flutter principaux
 
 | Package | Role |
 | --- | --- |
 | `sqflite` | Stockage SQLite sur Android |
-| `sqflite_common_ffi` | Stockage SQLite sur Windows/desktop |
+| `sqflite_common_ffi` | Stockage SQLite sur Windows et macOS |
 | `path` et `path_provider` | Emplacement de la base et des fichiers exportes |
 | `pdf` | Generation des rapports PDF |
 | `firebase_core` | Initialisation Firebase |
@@ -224,6 +243,13 @@ flutter config --enable-windows-desktop
 flutter run -d windows
 ```
 
+Pour macOS, executer ces commandes depuis un Mac :
+
+```bash
+flutter config --enable-macos-desktop
+flutter run -d macos
+```
+
 Firebase n'est pas requis pour lancer l'application. Dans **Config > Firebase**,
 le bouton **Activer Firebase** permet de coller la configuration du projet et
 de connecter le compte utilisateur dans un seul parcours. Les paramètres sont
@@ -243,13 +269,15 @@ flutter test
 ```bash
 flutter build apk --release
 flutter build windows --release
+flutter build macos --release
 ```
 
 Le build APK release signe necessite un keystore Android et un fichier local
 `android/key.properties`. Le monitoring Android peut etre ajoute avec
 `android/app/google-services.json`, comme explique dans
 [`documentation/FIREBASE_MONITORING_SETUP.md`](documentation/FIREBASE_MONITORING_SETUP.md).
-Le build Windows doit etre execute depuis Windows.
+Le build Windows doit etre execute depuis Windows et le build macOS depuis
+un Mac equipe de Xcode et CocoaPods.
 
 ## Publication Des Releases
 
@@ -259,7 +287,8 @@ construit les artefacts lors d'un tag SemVer prefixe par `v`, par exemple
 
 - APK Android signe ;
 - archive portable Windows ;
-- installateur Windows Inno Setup.
+- installateur Windows Inno Setup ;
+- image disque et archive macOS.
 
 Pour la signature Android, les secrets GitHub Actions suivants doivent etre
 configures :
@@ -298,6 +327,7 @@ base64 -i android/app/tilly-release.jks | pbcopy
 | `lib/src/ui/`, `lib/src/exports/` | Ecrans, dialogues et exports PDF |
 | `android/` | Projet Android |
 | `windows/` | Projet Windows |
+| `macos/` | Projet macOS |
 | `installer/` | Script Inno Setup pour l'installateur Windows |
 | `.github/workflows/` | Compilation et publication automatique |
 | `documentation/` | Documentation Firebase, analyse et references PDF/HTML |

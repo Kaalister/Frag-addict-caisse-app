@@ -15,8 +15,8 @@ configure au moment du build, pas depuis l'interface de l'application.
 - Firebase Analytics sur Android release.
 - Firebase Crashlytics sur Android release.
 - Collecte desactivee en debug par defaut pour ne pas polluer les metriques.
-- Aucun monitoring Firebase sur Windows, car Analytics et Crashlytics ne sont
-  pas disponibles pour cette cible dans ce projet.
+- Aucun monitoring Firebase sur Windows ou macOS, car il reste volontairement
+  limite a Android dans ce projet.
 
 ## Creer le projet Firebase monitoring
 

@@ -131,7 +131,9 @@ General > Vos applications > Caisse Android**.
 Documentation officielle :
 [ajouter Firebase a Android](https://firebase.google.com/docs/android/setup).
 
-## 8. Ajouter l'application Windows
+## 8. Ajouter les applications Windows et macOS
+
+### 8.1 Windows
 
 Firebase ne propose pas d'icone Windows dans ce parcours. La version Windows
 utilise la configuration d'une application Web.
@@ -163,12 +165,28 @@ applications > Caisse Windows > Configuration du SDK**.
 Documentation officielle :
 [ajouter Firebase a une application Web](https://firebase.google.com/docs/web/setup).
 
+### 8.2 macOS
+
+La version macOS utilise une application Firebase Apple liee au bundle
+`com.tilly.caisse`.
+
+1. Revenir a la vue d'ensemble du projet.
+2. Cliquer sur **Ajouter une application**, puis sur l'icone Apple.
+3. Saisir exactement le bundle ID `com.tilly.caisse`.
+4. Choisir un surnom libre, par exemple `Caisse macOS`.
+5. Enregistrer l'application et telecharger `GoogleService-Info.plist`.
+6. Ouvrir ce fichier avec un editeur de texte et copier tout son contenu.
+
+Il ne faut pas ajouter le fichier au projet : Tilly lit directement son
+contenu depuis l'ecran de configuration.
+
 ## 9. Activer Firebase dans la caisse
 
 Utiliser la configuration correspondant a l'appareil :
 
 - sur Android, copier le contenu complet de `google-services.json` ;
-- sur Windows, copier le bloc `firebaseConfig` de l'application Web.
+- sur Windows, copier le bloc `firebaseConfig` de l'application Web ;
+- sur macOS, copier le contenu complet de `GoogleService-Info.plist`.
 
 Dans la caisse :
 
@@ -181,8 +199,8 @@ Dans la caisse :
    **Synchroniser**.
 
 La saisie separee de `apiKey`, `appId`, `messagingSenderId`, `projectId`,
-`authDomain`, `storageBucket` et `measurementId` reste accessible dans
-**Options avancees**.
+`authDomain`, `storageBucket`, `measurementId` et du bundle ID Apple reste
+accessible dans **Options avancees**.
 
 Les parametres du projet sont conserves dans le stockage securise de
 l'appareil. Ils ne sont inclus ni dans les sauvegardes JSON ni dans la
@@ -214,8 +232,8 @@ ligne par ligne.
 
 1. Installer l'application sur le deuxieme appareil.
 2. Recuperer la configuration correspondant a sa plateforme. Un appareil
-   Android utilise l'application Firebase Android ; Windows utilise
-   l'application Firebase Web.
+   Android utilise l'application Firebase Android, Windows utilise
+   l'application Firebase Web et macOS utilise l'application Firebase Apple.
 3. Ouvrir **Config > Firebase > Activer Firebase**.
 4. Coller la configuration et utiliser le meme compte email/mot de passe.
 5. Cliquer sur **Synchroniser**.
